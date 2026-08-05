@@ -1,0 +1,24 @@
+:root{
+    --primary:#2E7D32;
+    --secondary:#66BB6A;
+
+    --danger:#E53935;
+    --warning:#F9A825;
+
+    --background:#F5F7FA;
+    --card:#FFFFFF;
+
+    --text:#333333;
+    --subText:#666666;
+
+    --border:#E0E0E0;
+
+    --shadow:0 4px 15px rgba(0,0,0,.08);
+
+    --radius:16px;
+}
+
+body{
+    background:var(--background);
+    color:var(--text);
+}

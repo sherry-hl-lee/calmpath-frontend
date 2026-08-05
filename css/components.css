@@ -1,0 +1,116 @@
+/* ---------- BUTTON ---------- */
+
+.btn{
+
+    border:none;
+
+    cursor:pointer;
+
+    padding:12px 24px;
+
+    border-radius:12px;
+
+    font-size:16px;
+
+    transition:.25s;
+
+}
+
+.btn-primary{
+
+    background:var(--primary);
+
+    color:white;
+
+}
+
+.btn-primary:hover{
+
+    background:#256728;
+
+}
+
+.btn-secondary{
+
+    background:white;
+
+    border:1px solid var(--border);
+
+}
+
+.btn-secondary:hover{
+
+    background:#f4f4f4;
+
+}
+
+/* ---------- CARD ---------- */
+
+.card{
+
+    background:var(--card);
+
+    border-radius:var(--radius);
+
+    box-shadow:var(--shadow);
+
+    padding:20px;
+
+}
+
+/* ---------- INPUT ---------- */
+
+.input{
+
+    width:100%;
+
+    padding:12px;
+
+    border-radius:10px;
+
+    border:1px solid var(--border);
+
+    font-size:15px;
+
+}
+
+/* ---------- BADGE ---------- */
+
+.badge{
+
+    display:inline-block;
+
+    padding:6px 14px;
+
+    border-radius:30px;
+
+    font-size:13px;
+
+    font-weight:bold;
+
+}
+
+.low{
+
+    background:#E8F5E9;
+
+    color:#2E7D32;
+
+}
+
+.high{
+
+    background:#FDECEA;
+
+    color:#C62828;
+
+}
+
+
+.limited{
+
+    background:#EEEEEE;
+
+    color:#555555;
+
+}
