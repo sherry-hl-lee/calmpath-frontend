@@ -1,61 +1,49 @@
-/* CalmPath — design tokens & base */
+/* CalmPath — tokens aligned to Figma (white UI, Inter/system sans) */
 
-@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Outfit:wght@400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
 
 :root {
-  /* Brand */
-  --brand: #1b6b4a;
-  --brand-deep: #0f4a34;
-  --brand-soft: #d8efe4;
-  --brand-mist: #eef7f2;
+  --brand: #34c759;
+  --brand-deep: #248a3d;
+  --brand-soft: #e8f8ec;
 
-  /* Surfaces */
-  --bg: #e8eef0;
-  --bg-glow: #d4e4dc;
-  --surface: #f7faf9;
+  --bg: #ffffff;
+  --surface: #ffffff;
   --surface-raised: #ffffff;
-  --panel: #fbfcfc;
-  --border: #d5e0db;
-  --border-strong: #b7c9c0;
+  --panel: #ffffff;
+  --header: #9a9a9a;
+  --border: #e5e5ea;
+  --border-strong: #d1d1d6;
 
-  /* Text */
-  --text: #1a2b24;
-  --text-muted: #5a6f66;
-  --text-faint: #8a9c94;
+  --text: #1c1c1e;
+  --text-muted: #8e8e93;
+  --text-faint: #aeaeb2;
 
-  /* Sensory indicators */
-  --low: #1f7a4d;
-  --low-bg: #e3f4ea;
-  --low-ring: #8dceb0;
-  --high: #b42318;
-  --high-bg: #fdecea;
-  --high-ring: #f0a8a2;
-  --limited: #5c6b64;
-  --limited-bg: #eef1f0;
-  --limited-ring: #c5cec9;
-  --medium: #9a6700;
-  --medium-bg: #fff4d6;
-  --busy: #c2410c;
-  --busy-bg: #ffedd5;
+  --low: #34c759;
+  --low-bg: #eaf9ee;
+  --high: #ff3b30;
+  --high-bg: #ffeceb;
+  --limited: #8e8e93;
+  --limited-bg: #f2f2f7;
+  --medium: #ffcc00;
+  --medium-bg: #fff8e0;
+  --busy: #ff3b30;
+  --busy-bg: #ffe5e3;
 
-  /* Feedback */
-  --warn: #9a6700;
-  --warn-bg: #fff8e8;
-  --info: #0f5c6b;
-  --info-bg: #e6f4f7;
+  --warn: #ff3b30;
+  --warn-bg: #fff1f0;
+  --info-bg: #f2f2f7;
 
-  /* Layout */
-  --radius-sm: 8px;
-  --radius: 12px;
-  --radius-lg: 18px;
-  --shadow: 0 1px 2px rgba(26, 43, 36, 0.06), 0 8px 24px rgba(26, 43, 36, 0.06);
-  --shadow-soft: 0 1px 0 rgba(26, 43, 36, 0.04);
-  --topbar-h: 64px;
-  --sidebar-w: 220px;
-  --panel-w: 380px;
-  --ease: cubic-bezier(0.22, 1, 0.36, 1);
-  --font-ui: "Outfit", sans-serif;
-  --font-brand: "Fraunces", Georgia, serif;
+  --radius-sm: 10px;
+  --radius: 14px;
+  --radius-lg: 20px;
+  --shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  --shadow-soft: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --topbar-h: 52px;
+  --sidebar-w: 210px;
+  --panel-w: 360px;
+  --ease: ease;
+  --font-ui: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
 *,
@@ -76,10 +64,7 @@ body {
   font-size: 15px;
   line-height: 1.45;
   color: var(--text);
-  background:
-    radial-gradient(1200px 600px at 12% -10%, var(--bg-glow), transparent 55%),
-    radial-gradient(900px 500px at 90% 0%, #dce8ef, transparent 50%),
-    var(--bg);
+  background: #ffffff;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -93,11 +78,6 @@ select {
 a {
   color: inherit;
   text-decoration: none;
-}
-
-img {
-  max-width: 100%;
-  display: block;
 }
 
 ul {
@@ -120,11 +100,10 @@ ul {
   border: 0;
 }
 
-/* Entrance motion for shell panels */
 @keyframes rise-in {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
@@ -135,20 +114,9 @@ ul {
 @keyframes soft-pulse {
   0%,
   100% {
-    transform: scale(1);
-    opacity: 0.85;
+    opacity: 0.75;
   }
   50% {
-    transform: scale(1.08);
-    opacity: 1;
-  }
-}
-
-@keyframes map-fade {
-  from {
-    opacity: 0.4;
-  }
-  to {
     opacity: 1;
   }
 }

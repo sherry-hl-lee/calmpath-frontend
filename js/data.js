@@ -6,7 +6,7 @@ const routes = [
     distance: "1.2 km",
     sensory: "Low",
     sensoryClass: "low",
-    note: "Less crowded · Recommended",
+    note: "Less crowded",
     recommended: true,
   },
   {
@@ -16,7 +16,7 @@ const routes = [
     distance: "1.0 km",
     sensory: "High",
     sensoryClass: "high",
-    note: "Shortest path · Through busy corridors",
+    note: "Through busy corridors",
     recommended: false,
   },
   {
@@ -26,7 +26,34 @@ const routes = [
     distance: "1.4 km",
     sensory: "Limited Data",
     sensoryClass: "limited",
-    note: "Partial sensor coverage",
+    note: "Partial data",
     recommended: false,
+  },
+];
+
+const refuges = [
+  {
+    id: "flagstaff",
+    name: "Flagstaff Gardens",
+    type: "Park",
+    icon: "🌳",
+    distance: 360,
+    address: "309-311 William St, West Melbourne VIC 3003",
+  },
+  {
+    id: "library",
+    name: "State Library Victoria",
+    type: "Library",
+    icon: "📚",
+    distance: 450,
+    address: "328 Swanston St, Melbourne VIC 3000",
+  },
+  {
+    id: "cafe",
+    name: "Quiet Corner Cafe",
+    type: "Cafe",
+    icon: "☕",
+    distance: 680,
+    address: "Little Lonsdale St, Melbourne VIC 3000",
   },
 ];
