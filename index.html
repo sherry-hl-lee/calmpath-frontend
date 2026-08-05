@@ -1,120 +1,232 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <title>CalmPath</title>
-
-    <link rel="stylesheet" href="css/style.css">
-    <link rel="stylesheet" href="css/layout.css">
-    <link rel="stylesheet" href="css/components.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CalmPath</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <link rel="stylesheet" href="css/components.css">
 </head>
-
 <body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand" aria-label="CalmPath">
+        <span class="brand__mark" aria-hidden="true"></span>
+        <span class="brand__name">CalmPath</span>
+      </div>
 
-    <header class="header">
+      <div class="topbar__search">
+        <label class="sr-only" for="global-search">Search destination</label>
+        <input
+          id="global-search"
+          class="input input--search"
+          type="search"
+          placeholder="Where are you going? Melbourne CBD destination…"
+          autocomplete="off"
+        >
+      </div>
 
-        <div class="logo">
-            CalmPath
-        </div>
-
-        <div class="search-box">
-            <input type="text" placeholder="Search destination...">
-        </div>
-
-        <div class="header-right">
-            ⚙️
-        </div>
-
+      <div class="topbar__actions">
+        <button type="button" class="btn btn--ghost btn--sm" data-nav="settings">Settings</button>
+      </div>
     </header>
 
+    <div class="shell">
+      <aside class="sidebar" aria-label="Main navigation">
+        <p class="sidebar__label">Navigate</p>
+        <nav class="nav">
+          <button type="button" class="nav__item is-active" data-nav="routes">
+            <svg class="nav__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="M4 19V5M4 12h10l2-4 3 8" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            Route Planner
+          </button>
+          <button type="button" class="nav__item" data-nav="refuges">
+            <svg class="nav__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="M12 21s-7-5.2-7-11a7 7 0 1 1 14 0c0 5.8-7 11-7 11Z" stroke-linejoin="round"/>
+              <circle cx="12" cy="10" r="2.5"/>
+            </svg>
+            Quiet Refuges
+          </button>
+          <button type="button" class="nav__item" data-nav="alerts">
+            <svg class="nav__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="M12 9v4M12 17h.01M10.3 4.3 2.8 18a2 2 0 0 0 1.7 3h15a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0Z" stroke-linejoin="round"/>
+            </svg>
+            Predictive Alerts
+          </button>
+          <button type="button" class="nav__item" data-nav="settings">
+            <svg class="nav__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" stroke-linecap="round"/>
+            </svg>
+            Settings
+          </button>
+        </nav>
 
-    <div class="container">
+        <div class="sidebar__foot">
+          Desktop shell ready. Route logic and live map data land in later steps.
+        </div>
+      </aside>
 
-        <aside class="sidebar">
+      <div class="workspace">
+        <section class="panel" aria-live="polite">
+          <!-- US1.x Route Planner -->
+          <div class="view is-active" id="view-routes" data-view="routes">
+            <header class="panel__header">
+              <p class="panel__eyebrow">Route planning</p>
+              <h1 class="panel__title">Plan a calmer path</h1>
+              <p class="panel__lede">Choose a Melbourne CBD destination to compare sensory-aware routes.</p>
+            </header>
 
-            <h3>Navigation</h3>
-
-            <ul>
-
-                <li>🗺 Route Planner</li>
-
-                <li>🌳 Quiet Refuges</li>
-
-                <li>📢 Predictive Alerts</li>
-
-                <li>⚙ Settings</li>
-
-            </ul>
-
-        </aside>
- 
-        <main class="main-content">
-
-            <h1>Component Preview</h1>
-
-            <br>
-
-            <div class="card">
-
-                <h2>Buttons</h2>
-
-                <br>
-
-                <button class="btn btn-primary">
-                    Primary Button
-                </button>
-
-                <button class="btn btn-secondary">
-                    Secondary
-                </button>
-
+            <div class="banner banner--success" role="status">
+              <span class="banner__dot" aria-hidden="true"></span>
+              <span>Recommended route updated — lower sensory load highlighted below.</span>
             </div>
 
-            <br>
-
-            <div class="card">
-
-                <h2>Search Box</h2>
-
-                <br>
-
-                <input
-                    class="input"
-                    placeholder="Search destination..."
-                >
-
+            <div class="field">
+              <span class="field__label">Current location</span>
+              <div class="location-pill">
+                <span class="location-pill__pin" aria-hidden="true"></span>
+                Flinders Street Station
+              </div>
             </div>
 
-            <br>
-
-            <div class="card">
-
-                <h2>Sensory Badge</h2>
-
-                <br>
-
-                <span class="badge low">
-                    LOW
-                </span>
-
-
-                <span class="badge high">
-                    HIGH
-                </span>
-
-                <span class="badge limited">
-                    LIMITED DATA
-                </span>
-
+            <div class="field">
+              <label class="field__label" for="destination">Destination</label>
+              <input id="destination" class="input" type="text" placeholder="e.g. State Library Victoria">
             </div>
 
-        </main>
+            <button type="button" class="btn btn--primary btn--block" id="find-route">Find a route</button>
 
+            <div class="section">
+              <div class="section__head">
+                <h2 class="section__title">Route options</h2>
+              </div>
+              <div id="routes" aria-label="Route options">
+                <!-- Populated by app.js — shell preview cards -->
+              </div>
+            </div>
+          </div>
+
+          <!-- US2.1 Quiet Refuges -->
+          <div class="view" id="view-refuges" data-view="refuges">
+            <header class="panel__header">
+              <p class="panel__eyebrow">Sensory refuge</p>
+              <h1 class="panel__title">Find nearby quiet spaces</h1>
+              <p class="panel__lede">Parks, libraries, and calm public spots within your search radius.</p>
+            </header>
+
+            <div class="field">
+              <span class="field__label">Search radius</span>
+              <div class="chips" role="group" aria-label="Search radius">
+                <button type="button" class="chip">750m</button>
+                <button type="button" class="chip is-active">1km</button>
+              </div>
+            </div>
+
+            <div class="empty">
+              <p class="empty__title">Refuge list coming in Step 5</p>
+              <p>Shell layout is ready for name, type, distance, and address.</p>
+            </div>
+          </div>
+
+          <!-- US2.2 Predictive Alerts -->
+          <div class="view" id="view-alerts" data-view="alerts">
+            <header class="panel__header">
+              <p class="panel__eyebrow">Next hour</p>
+              <h1 class="panel__title">Predictive alerts</h1>
+              <p class="panel__lede">Crowd outlook based on historical pedestrian trends.</p>
+            </header>
+
+            <div class="banner banner--warn" role="status">
+              <span class="banner__dot" aria-hidden="true"></span>
+              <span>Alert UI shell ready — content wires up in Step 6.</span>
+            </div>
+
+            <div class="card">
+              <div class="card__row">
+                <div>
+                  <p class="card__title">Central Atrium</p>
+                  <p class="card__meta">Predicted timeframe · Next hour</p>
+                </div>
+                <span class="badge badge--high">High</span>
+              </div>
+              <div class="card__foot">
+                <button type="button" class="btn btn--secondary btn--sm">View quieter routes</button>
+                <button type="button" class="btn btn--ghost btn--sm">Nearby refuges</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- US1.3 Settings / threshold -->
+          <div class="view" id="view-settings" data-view="settings">
+            <header class="panel__header">
+              <p class="panel__eyebrow">Preferences</p>
+              <h1 class="panel__title">Crowd threshold</h1>
+              <p class="panel__lede">Routes above your preference will trigger alternatives.</p>
+            </header>
+
+            <div class="field">
+              <span class="field__label">Preferred sensory level</span>
+              <div class="chips" id="threshold-chips" role="group" aria-label="Crowd threshold">
+                <button type="button" class="chip is-active" data-threshold="low">Low only</button>
+                <button type="button" class="chip" data-threshold="medium">Medium</button>
+                <button type="button" class="chip" data-threshold="high">High</button>
+              </div>
+            </div>
+
+            <div class="banner banner--info">
+              <span class="banner__dot" aria-hidden="true"></span>
+              <span>Threshold saves locally in Step 4. Shell controls are interactive now.</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="map-stage" aria-label="Map">
+          <div class="map-stage__toolbar">
+            <div class="legend" aria-label="Map legend">
+              <span class="legend__item"><span class="legend__swatch legend__swatch--low"></span> Low sensory</span>
+              <span class="legend__item"><span class="legend__swatch legend__swatch--high"></span> High sensory</span>
+              <span class="legend__item"><span class="legend__swatch legend__swatch--limited"></span> Limited data</span>
+              <span class="legend__item"><span class="legend__swatch legend__swatch--busy"></span> Busy corridor</span>
+              <span class="legend__item"><span class="legend__swatch legend__swatch--tram"></span> Tram</span>
+              <span class="legend__item"><span class="legend__swatch legend__swatch--train"></span> Train</span>
+              <span class="legend__item"><span class="legend__swatch legend__swatch--bus"></span> Bus</span>
+            </div>
+          </div>
+
+          <div class="map-canvas" id="map">
+            <div class="map-route map-route--a" aria-hidden="true"></div>
+            <div class="map-route map-route--b" aria-hidden="true"></div>
+            <div class="map-busy" aria-hidden="true">
+              <span class="map-busy__label">Busy area</span>
+            </div>
+            <div class="map-pt map-pt--tram">
+              <span class="map-pt__dot"></span>
+              <span class="map-pt__label">Tram</span>
+            </div>
+            <div class="map-pt map-pt--train">
+              <span class="map-pt__dot"></span>
+              <span class="map-pt__label">Train</span>
+            </div>
+            <div class="map-pt map-pt--bus">
+              <span class="map-pt__dot"></span>
+              <span class="map-pt__label">Bus</span>
+            </div>
+            <div class="map-placeholder">
+              <div>
+                <strong>Melbourne CBD map stage</strong>
+                Live tiles and route polylines arrive with Step 2.
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
     </div>
+  </div>
 
+  <script src="js/data.js"></script>
+  <script src="js/app.js"></script>
 </body>
-
 </html>

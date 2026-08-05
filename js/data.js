@@ -1,0 +1,32 @@
+const routes = [
+  {
+    id: "a",
+    name: "Route A",
+    time: "18 min",
+    distance: "1.2 km",
+    sensory: "Low",
+    sensoryClass: "low",
+    note: "Less crowded · Recommended",
+    recommended: true,
+  },
+  {
+    id: "b",
+    name: "Route B",
+    time: "15 min",
+    distance: "1.0 km",
+    sensory: "High",
+    sensoryClass: "high",
+    note: "Shortest path · Through busy corridors",
+    recommended: false,
+  },
+  {
+    id: "c",
+    name: "Route C",
+    time: "17 min",
+    distance: "1.4 km",
+    sensory: "Limited Data",
+    sensoryClass: "limited",
+    note: "Partial sensor coverage",
+    recommended: false,
+  },
+];

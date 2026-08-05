@@ -1,24 +1,154 @@
-:root{
-    --primary:#2E7D32;
-    --secondary:#66BB6A;
+/* CalmPath — design tokens & base */
 
-    --danger:#E53935;
-    --warning:#F9A825;
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Outfit:wght@400;500;600;700&display=swap");
 
-    --background:#F5F7FA;
-    --card:#FFFFFF;
+:root {
+  /* Brand */
+  --brand: #1b6b4a;
+  --brand-deep: #0f4a34;
+  --brand-soft: #d8efe4;
+  --brand-mist: #eef7f2;
 
-    --text:#333333;
-    --subText:#666666;
+  /* Surfaces */
+  --bg: #e8eef0;
+  --bg-glow: #d4e4dc;
+  --surface: #f7faf9;
+  --surface-raised: #ffffff;
+  --panel: #fbfcfc;
+  --border: #d5e0db;
+  --border-strong: #b7c9c0;
 
-    --border:#E0E0E0;
+  /* Text */
+  --text: #1a2b24;
+  --text-muted: #5a6f66;
+  --text-faint: #8a9c94;
 
-    --shadow:0 4px 15px rgba(0,0,0,.08);
+  /* Sensory indicators */
+  --low: #1f7a4d;
+  --low-bg: #e3f4ea;
+  --low-ring: #8dceb0;
+  --high: #b42318;
+  --high-bg: #fdecea;
+  --high-ring: #f0a8a2;
+  --limited: #5c6b64;
+  --limited-bg: #eef1f0;
+  --limited-ring: #c5cec9;
+  --medium: #9a6700;
+  --medium-bg: #fff4d6;
+  --busy: #c2410c;
+  --busy-bg: #ffedd5;
 
-    --radius:16px;
+  /* Feedback */
+  --warn: #9a6700;
+  --warn-bg: #fff8e8;
+  --info: #0f5c6b;
+  --info-bg: #e6f4f7;
+
+  /* Layout */
+  --radius-sm: 8px;
+  --radius: 12px;
+  --radius-lg: 18px;
+  --shadow: 0 1px 2px rgba(26, 43, 36, 0.06), 0 8px 24px rgba(26, 43, 36, 0.06);
+  --shadow-soft: 0 1px 0 rgba(26, 43, 36, 0.04);
+  --topbar-h: 64px;
+  --sidebar-w: 220px;
+  --panel-w: 380px;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --font-ui: "Outfit", sans-serif;
+  --font-brand: "Fraunces", Georgia, serif;
 }
 
-body{
-    background:var(--background);
-    color:var(--text);
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--text);
+  background:
+    radial-gradient(1200px 600px at 12% -10%, var(--bg-glow), transparent 55%),
+    radial-gradient(900px 500px at 90% 0%, #dce8ef, transparent 50%),
+    var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+ul {
+  list-style: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+
+/* Entrance motion for shell panels */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes soft-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.85;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+}
+
+@keyframes map-fade {
+  from {
+    opacity: 0.4;
+  }
+  to {
+    opacity: 1;
+  }
 }
