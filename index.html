@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>CalmPath</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="css/layout.css">
   <link rel="stylesheet" href="css/components.css">
@@ -22,9 +23,11 @@
           id="global-search"
           class="input input--search"
           type="search"
+          list="cbd-destinations"
           placeholder="Where are you going?"
           autocomplete="off"
         >
+        <datalist id="cbd-destinations"></datalist>
       </div>
 
       <div class="topbar__actions">
@@ -65,32 +68,48 @@
 
       <div class="workspace">
         <section class="panel" aria-live="polite">
+          <!-- US1.1 / 1.2 / 1.3 Route Planner -->
           <div class="view is-active" id="view-routes" data-view="routes">
             <header class="panel__header">
               <h1 class="panel__title">Where are you going?</h1>
             </header>
 
-            <div class="banner banner--success" role="status">
+            <div id="route-banner" class="banner banner--success" role="status" hidden>
               <span class="banner__icon" aria-hidden="true">🟢</span>
-              <span>Recommended route updated</span>
+              <span id="route-banner-text">Recommended route updated</span>
             </div>
 
             <div class="field">
-              <span class="field__label">Current location</span>
-              <div class="location-pill">
-                <span class="location-pill__pin" aria-hidden="true">📍</span>
-                Flinders Street Station
-              </div>
+              <label class="field__label" for="origin-input">Starting point</label>
+              <input
+                id="origin-input"
+                class="input"
+                type="text"
+                list="cbd-destinations"
+                value="Your location"
+                placeholder="Starting point"
+                autocomplete="off"
+              >
             </div>
 
             <div class="field">
               <label class="field__label" for="destination">Destination</label>
-              <input id="destination" class="input" type="text" placeholder="Enter destination">
+              <input
+                id="destination"
+                class="input"
+                type="text"
+                list="cbd-destinations"
+                placeholder="Melbourne CBD destination"
+                autocomplete="off"
+              >
             </div>
 
             <button type="button" class="btn btn--primary btn--block" id="find-route">Find a route</button>
+            <p id="route-error" class="field-error" hidden></p>
 
-            <div class="section">
+            <div id="threshold-panel" class="threshold-panel" hidden></div>
+
+            <div class="section" id="routes-section" hidden>
               <div class="section__head">
                 <h2 class="section__title">Route options</h2>
               </div>
@@ -98,6 +117,7 @@
             </div>
           </div>
 
+          <!-- US2.1 Quiet Refuges -->
           <div class="view" id="view-refuges" data-view="refuges">
             <header class="panel__header">
               <h1 class="panel__title">Find Nearby Quiet spaces</h1>
@@ -129,27 +149,16 @@
             <div id="refuge-list" class="refuge-list" aria-label="Nearby quiet spaces"></div>
           </div>
 
+          <!-- US2.2 Predictive Alerts -->
           <div class="view" id="view-alerts" data-view="alerts">
             <header class="panel__header">
-              <h1 class="panel__title">Predictive Alert</h1>
+              <h1 class="panel__title">Predictive Alerts</h1>
               <p class="panel__lede">Based on Historical Trend</p>
             </header>
-
-            <div class="card">
-              <div class="card__row">
-                <div>
-                  <p class="card__title">Central Atrium</p>
-                  <p class="card__meta">Predicted Time · Next Hour</p>
-                </div>
-                <span class="badge badge--high"><span class="badge__icon" aria-hidden="true">🔴</span> High</span>
-              </div>
-              <div class="card__foot">
-                <button type="button" class="btn btn--secondary btn--sm">View Alternative Low-Stimulation Routes</button>
-                <button type="button" class="btn btn--ghost btn--sm">View Nearby Quiet Refuge Spots</button>
-              </div>
-            </div>
+            <div id="alerts-list" class="alerts-list"></div>
           </div>
 
+          <!-- US1.3 Settings -->
           <div class="view" id="view-settings" data-view="settings">
             <header class="panel__header">
               <h1 class="panel__title">Crowd Threshold</h1>
@@ -179,50 +188,42 @@
                 <span>High</span>
               </div>
             </div>
+            <p class="hint">Routes above your preference will offer quieter alternatives.</p>
           </div>
         </section>
 
         <section class="map-stage" aria-label="Map">
           <div class="map-stage__toolbar">
             <div class="legend" aria-label="Map legend">
-              <span class="legend__item"><span class="legend__emoji" aria-hidden="true">🟢</span> Low (Less crowded)</span>
-              <span class="legend__item"><span class="legend__emoji" aria-hidden="true">🔴</span> High (crowded)</span>
-              <span class="legend__item"><span class="legend__emoji" aria-hidden="true">⚪</span> Limited (Partial data)</span>
+              <span class="legend__item"><span class="legend__emoji" aria-hidden="true">🟢</span> Low</span>
+              <span class="legend__item"><span class="legend__emoji" aria-hidden="true">🔴</span> High / Busy</span>
+              <span class="legend__item"><span class="legend__emoji" aria-hidden="true">⚪</span> Limited</span>
               <span class="legend__item"><span class="legend__emoji" aria-hidden="true">🚋</span> Tram</span>
               <span class="legend__item"><span class="legend__emoji" aria-hidden="true">🚆</span> Train</span>
               <span class="legend__item"><span class="legend__emoji" aria-hidden="true">🚌</span> Bus</span>
             </div>
           </div>
-
-          <div class="map-canvas" id="map">
-            <div class="map-route map-route--a" aria-hidden="true"></div>
-            <div class="map-route map-route--b" aria-hidden="true"></div>
-            <div class="map-busy" aria-hidden="true">
-              <span class="map-busy__label">Busy Area</span>
-            </div>
-            <div class="map-pt map-pt--tram">
-              <span aria-hidden="true">🚋</span>
-              <span class="map-pt__label">Tram</span>
-            </div>
-            <div class="map-pt map-pt--train">
-              <span aria-hidden="true">🚆</span>
-              <span class="map-pt__label">Train</span>
-            </div>
-            <div class="map-pt map-pt--bus">
-              <span aria-hidden="true">🚌</span>
-              <span class="map-pt__label">Bus</span>
-            </div>
-            <div class="map-placeholder">
-              <div>
-                <strong>Melbourne CBD map</strong>
-              </div>
-            </div>
-          </div>
+          <div id="map" class="map-canvas" role="img" aria-label="Melbourne CBD map"></div>
         </section>
       </div>
     </div>
   </div>
 
+  <div id="alert-modal" class="modal-backdrop" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <p class="modal__eyebrow">Predictive Alert · Based on Historical Trend</p>
+      <h2 class="modal__title" id="modal-title"></h2>
+      <dl class="modal__meta" id="modal-meta"></dl>
+      <p class="modal__sub" id="modal-message"></p>
+      <div class="modal__actions">
+        <button type="button" class="btn btn--primary btn--block" id="modal-routes">View Alternative Low-Stimulation Routes</button>
+        <button type="button" class="btn btn--secondary btn--block" id="modal-refuges">View Nearby Quiet Refuge Spots</button>
+        <button type="button" class="btn btn--ghost btn--block" id="modal-close">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="js/data.js"></script>
   <script src="js/app.js"></script>
 </body>

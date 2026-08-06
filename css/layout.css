@@ -195,22 +195,7 @@
 .map-stage {
   position: relative;
   min-height: 0;
-  background:
-    repeating-linear-gradient(
-      0deg,
-      transparent,
-      transparent 28px,
-      rgba(0, 0, 0, 0.035) 28px,
-      rgba(0, 0, 0, 0.035) 29px
-    ),
-    repeating-linear-gradient(
-      90deg,
-      transparent,
-      transparent 28px,
-      rgba(0, 0, 0, 0.035) 28px,
-      rgba(0, 0, 0, 0.035) 29px
-    ),
-    #eef0f2;
+  background: #eef0f2;
 }
 
 .map-stage__toolbar {
@@ -218,7 +203,7 @@
   top: 14px;
   left: 14px;
   right: 14px;
-  z-index: 5;
+  z-index: 1000;
   display: flex;
   justify-content: space-between;
   gap: 12px;
@@ -232,112 +217,50 @@
 .map-canvas {
   position: absolute;
   inset: 0;
+  z-index: 1;
 }
 
-.map-placeholder {
-  position: absolute;
-  inset: 0;
+.map-emoji-icon,
+.map-refuge-icon {
+  background: transparent;
+  border: none;
+  text-align: center;
+  line-height: 1.1;
+}
+
+.map-emoji-icon span {
+  font-size: 1.35rem;
+  display: block;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.25));
+}
+
+.map-emoji-icon small {
+  display: inline-block;
+  margin-top: 2px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #fff;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #5f6b66;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.map-refuge-icon span {
   display: grid;
   place-items: center;
-  color: var(--text-muted);
-  font-size: 0.88rem;
-  text-align: center;
-  padding: 24px;
-  pointer-events: none;
-}
-
-.map-placeholder strong {
-  display: block;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid #34c759;
   font-size: 1rem;
-  font-weight: 600;
-  color: var(--text);
-  margin-bottom: 4px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
 }
 
-.map-route {
-  position: absolute;
-  border: none;
-  background: transparent;
-  pointer-events: none;
-}
-
-.map-route--a {
-  left: 18%;
-  top: 28%;
-  width: 52%;
-  height: 38%;
-  border-top: 4px solid var(--low);
-  border-right: 4px solid var(--low);
-  border-radius: 0 40% 0 0;
-  opacity: 0.9;
-}
-
-.map-route--b {
-  left: 22%;
-  top: 42%;
-  width: 48%;
-  height: 4px;
-  background: var(--high);
-  opacity: 0.7;
-  transform: rotate(-8deg);
-}
-
-.map-busy {
-  position: absolute;
-  left: 48%;
-  top: 34%;
-  width: 140px;
-  height: 90px;
-  border-radius: 40% 50% 45% 55%;
-  background: rgba(255, 59, 48, 0.18);
-  border: 1.5px solid rgba(255, 59, 48, 0.35);
-  animation: soft-pulse 3s ease-in-out infinite;
-}
-
-.map-busy__label {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: var(--high);
-  white-space: nowrap;
-}
-
-.map-pt {
-  position: absolute;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  font-size: 1.5rem;
-  line-height: 1;
-}
-
-.map-pt__label {
-  font-size: 0.68rem;
-  font-weight: 600;
-  color: var(--text-muted);
-  background: #ffffff;
-  padding: 2px 6px;
-  border-radius: 4px;
-  box-shadow: var(--shadow-soft);
-}
-
-.map-pt--tram {
-  left: 26%;
-  top: 30%;
-}
-
-.map-pt--train {
-  left: 62%;
-  top: 22%;
-}
-
-.map-pt--bus {
-  left: 44%;
-  top: 68%;
+.map-refuge-icon.is-selected span {
+  border-color: #1c1c1e;
+  transform: scale(1.08);
 }
 
 @media (max-width: 1100px) {

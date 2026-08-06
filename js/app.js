@@ -1,27 +1,83 @@
 (function () {
-  const views = document.querySelectorAll("[data-view]");
-  const navItems = document.querySelectorAll("[data-nav]");
-  const routesEl = document.getElementById("routes");
-  const refugeListEl = document.getElementById("refuge-list");
-  const radiusSlider = document.getElementById("radius-slider");
-  const radiusValue = document.getElementById("radius-value");
-  const thresholdSlider = document.getElementById("threshold-slider");
-  const thresholdValue = document.getElementById("threshold-value");
-
+  const STORAGE_KEY = "calmpath-threshold";
   const thresholdLabels = ["Low", "Medium", "High"];
 
+  const state = {
+    threshold: 0,
+    routes: [],
+    selectedRouteId: null,
+    destination: null,
+    nearbyRefuges: [],
+    selectedRefugeId: null,
+    mapMode: "routes",
+  };
+
+  const els = {
+    views: document.querySelectorAll("[data-view]"),
+    navItems: document.querySelectorAll("[data-nav]"),
+    routes: document.getElementById("routes"),
+    routesSection: document.getElementById("routes-section"),
+    refugeList: document.getElementById("refuge-list"),
+    alertsList: document.getElementById("alerts-list"),
+    radiusSlider: document.getElementById("radius-slider"),
+    radiusValue: document.getElementById("radius-value"),
+    thresholdSlider: document.getElementById("threshold-slider"),
+    thresholdValue: document.getElementById("threshold-value"),
+    destination: document.getElementById("destination"),
+    globalSearch: document.getElementById("global-search"),
+    findRoute: document.getElementById("find-route"),
+    routeError: document.getElementById("route-error"),
+    routeBanner: document.getElementById("route-banner"),
+    routeBannerText: document.getElementById("route-banner-text"),
+    thresholdPanel: document.getElementById("threshold-panel"),
+    datalist: document.getElementById("cbd-destinations"),
+    modal: document.getElementById("alert-modal"),
+    modalTitle: document.getElementById("modal-title"),
+    modalMeta: document.getElementById("modal-meta"),
+    modalMessage: document.getElementById("modal-message"),
+    modalRoutes: document.getElementById("modal-routes"),
+    modalRefuges: document.getElementById("modal-refuges"),
+    modalClose: document.getElementById("modal-close"),
+    originInput: document.getElementById("origin-input"),
+  };
+
+  let map;
+  let originMarker = null;
+  let layers = {
+    routes: null,
+    busy: null,
+    pt: null,
+    refuges: null,
+    markers: null,
+  };
+
   function setView(name) {
-    views.forEach((view) => {
+    state.mapMode = name === "refuges" ? "refuges" : name === "alerts" ? "alerts" : "routes";
+    els.views.forEach((view) => {
       view.classList.toggle("is-active", view.dataset.view === name);
     });
-    navItems.forEach((item) => {
+    els.navItems.forEach((item) => {
       item.classList.toggle("is-active", item.dataset.nav === name);
     });
+    if (name === "refuges") {
+      loadNearbyRefuges();
+    } else {
+      refreshMapOverlays();
+    }
+    if (map) setTimeout(() => map.invalidateSize(), 50);
   }
 
-  navItems.forEach((item) => {
-    item.addEventListener("click", () => setView(item.dataset.nav));
-  });
+  function loadThreshold() {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    const value = saved === null ? 0 : Number(saved);
+    state.threshold = Number.isFinite(value) ? Math.min(2, Math.max(0, value)) : 0;
+    if (els.thresholdSlider) els.thresholdSlider.value = String(state.threshold);
+  }
+
+  function saveThreshold(value) {
+    state.threshold = value;
+    localStorage.setItem(STORAGE_KEY, String(value));
+  }
 
   function updateSliderFill(slider) {
     if (!slider) return;
@@ -38,163 +94,738 @@
   }
 
   function sensoryLabel(route) {
+    if (route.limitedData) return "Limited Data";
     if (route.sensoryClass === "low") return "Low Sensory";
     if (route.sensoryClass === "high") return "High Sensory";
     if (route.sensoryClass === "medium") return "Medium Sensory";
     return "Limited Data";
   }
 
-  function renderRoutes() {
-    if (!routesEl || typeof routes === "undefined") return;
+  function routeColor(route) {
+    if (route.sensoryClass === "low") return "#34c759";
+    if (route.sensoryClass === "high") return "#ff3b30";
+    if (route.sensoryClass === "medium") return "#ffcc00";
+    return "#8e8e93";
+  }
 
-    routesEl.innerHTML = routes
-      .map(
-        (route, index) => `
-      <article class="route-card${index === 0 ? " is-selected" : ""}" data-route="${route.id}" tabindex="0" role="button" aria-pressed="${index === 0}">
+  function initDatalist() {
+    if (!els.datalist || typeof CBD_DESTINATIONS === "undefined") return;
+    els.datalist.innerHTML = CBD_DESTINATIONS.map(
+      (d) => `<option value="${d.name}"></option>`
+    ).join("");
+  }
+
+  function syncDestinationInputs(value, source) {
+    if (source !== "destination" && els.destination) els.destination.value = value;
+    if (source !== "global" && els.globalSearch) els.globalSearch.value = value;
+  }
+
+  function showError(message) {
+    if (!els.routeError) return;
+    els.routeError.hidden = !message;
+    els.routeError.textContent = message || "";
+  }
+
+  function showBanner(message, type) {
+    if (!els.routeBanner) return;
+    els.routeBanner.hidden = !message;
+    els.routeBanner.className = `banner banner--${type || "success"}`;
+    const icon = els.routeBanner.querySelector(".banner__icon");
+    if (icon) {
+      icon.textContent =
+        type === "warn" || type === "danger" ? "🔴" : type === "info" ? "⚪" : "🟢";
+    }
+    if (els.routeBannerText) els.routeBannerText.textContent = message || "";
+  }
+
+  function renderOriginUi() {
+    if (els.originInput && document.activeElement !== els.originInput) {
+      els.originInput.value = ORIGIN.name;
+    }
+  }
+
+  function applyOriginChange(place, source) {
+    setOrigin({
+      name: place.name,
+      lat: place.lat,
+      lng: place.lng,
+      source: source || "custom",
+    });
+    renderOriginUi();
+    updateOriginMarker();
+    loadNearbyRefuges();
+    if (state.destination) {
+      planRoutesTo(state.destination);
+    } else {
+      refreshMapOverlays();
+    }
+  }
+
+  function detectUserLocation() {
+    if (!navigator.geolocation) {
+      applyOriginChange(DEFAULT_ORIGIN, "default");
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        applyOriginChange(
+          {
+            name: "Your location",
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+          },
+          "gps"
+        );
+      },
+      () => {
+        // Keep the visible "Your location" label; coords fall back to Flinders
+        setOrigin({
+          name: "Your location",
+          lat: DEFAULT_ORIGIN.lat,
+          lng: DEFAULT_ORIGIN.lng,
+          source: "default",
+        });
+        renderOriginUi();
+        updateOriginMarker();
+        loadNearbyRefuges();
+      },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
+    );
+  }
+
+  function commitOriginFromInput() {
+    const value = (els.originInput?.value || "").trim();
+    if (!value) return false;
+
+    // Keep GPS / default start when the label is still "Your location"
+    if (value.toLowerCase() === "your location") {
+      showError("");
+      return true;
+    }
+
+    const place = matchPlace(value);
+    if (!place) {
+      showError("Starting point not found. Try a CBD place or lat, lng.");
+      return false;
+    }
+    showError("");
+    const same =
+      Math.abs(place.lat - ORIGIN.lat) < 1e-6 &&
+      Math.abs(place.lng - ORIGIN.lng) < 1e-6 &&
+      place.name === ORIGIN.name;
+    if (!same) {
+      applyOriginChange(place, "custom");
+    } else {
+      renderOriginUi();
+      updateOriginMarker();
+    }
+    return true;
+  }
+
+  function wireOriginEditor() {
+    els.originInput?.addEventListener("change", () => {
+      commitOriginFromInput();
+    });
+    els.originInput?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        commitOriginFromInput();
+      }
+    });
+  }
+
+  function updateOriginMarker() {
+    if (!map || !layers.markers) return;
+    clearGroup(layers.markers);
+    originMarker = L.marker([ORIGIN.lat, ORIGIN.lng])
+      .addTo(layers.markers)
+      .bindPopup(`📍 Start · ${ORIGIN.name}`);
+    map.panTo([ORIGIN.lat, ORIGIN.lng]);
+  }
+
+  function initMap() {
+    if (typeof L === "undefined") return;
+    map = L.map("map", {
+      zoomControl: true,
+      attributionControl: true,
+    }).setView([ORIGIN.lat, ORIGIN.lng], 15);
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    }).addTo(map);
+
+    layers.routes = L.layerGroup().addTo(map);
+    layers.busy = L.layerGroup().addTo(map);
+    layers.pt = L.layerGroup().addTo(map);
+    layers.refuges = L.layerGroup().addTo(map);
+    layers.markers = L.layerGroup().addTo(map);
+
+    updateOriginMarker();
+    drawBusyZones();
+    drawPtStops();
+  }
+
+  function clearGroup(group) {
+    if (group) group.clearLayers();
+  }
+
+  function drawBusyZones() {
+    clearGroup(layers.busy);
+    if (typeof BUSY_ZONES === "undefined") return;
+    BUSY_ZONES.forEach((zone) => {
+      L.circle([zone.lat, zone.lng], {
+        radius: zone.radius,
+        color: "#ff3b30",
+        weight: 1,
+        fillColor: "#ff3b30",
+        fillOpacity: 0.22,
+      })
+        .bindTooltip(`${zone.label}`, { permanent: false })
+        .addTo(layers.busy);
+    });
+  }
+
+  function drawPtStops() {
+    clearGroup(layers.pt);
+    if (typeof PT_STOPS === "undefined") return;
+    PT_STOPS.forEach((stop) => {
+      const icon = L.divIcon({
+        className: "map-emoji-icon",
+        html: `<span>${stop.icon}</span><small>${stop.type}</small>`,
+        iconSize: [40, 36],
+        iconAnchor: [20, 18],
+      });
+      L.marker([stop.lat, stop.lng], { icon })
+        .bindPopup(`${stop.icon} ${stop.type} stop`)
+        .addTo(layers.pt);
+    });
+  }
+
+  function drawRoutesOnMap() {
+    clearGroup(layers.routes);
+    if (!state.routes.length) return;
+
+    const bounds = [];
+    state.routes.forEach((route) => {
+      const selected = route.id === state.selectedRouteId;
+      const line = L.polyline(route.path, {
+        color: routeColor(route),
+        weight: selected ? 6 : 4,
+        opacity: selected ? 0.95 : 0.45,
+        dashArray: route.sensoryClass === "high" ? "8 8" : null,
+      }).addTo(layers.routes);
+
+      line.on("click", () => selectRouteById(route.id));
+      route.path.forEach((p) => bounds.push(p));
+    });
+
+    if (state.destination) {
+      L.circleMarker([state.destination.lat, state.destination.lng], {
+        radius: 8,
+        color: "#1c1c1e",
+        fillColor: "#ffffff",
+        fillOpacity: 1,
+        weight: 3,
+      })
+        .bindPopup(state.destination.name)
+        .addTo(layers.routes);
+      bounds.push([state.destination.lat, state.destination.lng]);
+    }
+
+    if (bounds.length && map) {
+      map.fitBounds(bounds, { padding: [40, 40] });
+    }
+  }
+
+  function drawRefugesOnMap(items) {
+    clearGroup(layers.refuges);
+    (items || []).forEach((item) => {
+      const selected = item.id === state.selectedRefugeId;
+      const icon = L.divIcon({
+        className: `map-refuge-icon${selected ? " is-selected" : ""}`,
+        html: `<span>${refugeIcon(item.type)}</span>`,
+        iconSize: [34, 34],
+        iconAnchor: [17, 17],
+      });
+      L.marker([item.latitude, item.longitude], { icon })
+        .bindPopup(
+          `<strong>${item.name}</strong><br>${refugeTypeLabel(item.type)} · ${Math.round(
+            item.distance_m
+          )}m<br>${item.address}`
+        )
+        .on("click", () => selectRefuge(item.id))
+        .addTo(layers.refuges);
+    });
+  }
+
+  function refreshMapOverlays() {
+    if (!map) return;
+    if (state.mapMode === "refuges") {
+      clearGroup(layers.routes);
+      const nearby = state.nearbyRefuges || [];
+      drawRefugesOnMap(nearby);
+      if (nearby.length) {
+        map.fitBounds(
+          nearby
+            .map((r) => [r.latitude, r.longitude])
+            .concat([[ORIGIN.lat, ORIGIN.lng]]),
+          { padding: [40, 40] }
+        );
+      }
+    } else {
+      clearGroup(layers.refuges);
+      drawRoutesOnMap();
+    }
+  }
+
+  async function planRoutesTo(dest) {
+    if (!dest || !Number.isFinite(dest.lat) || !Number.isFinite(dest.lng)) return;
+
+    state.destination = dest;
+    syncDestinationInputs(dest.name || "", "both");
+
+    if (els.findRoute) {
+      els.findRoute.disabled = true;
+      els.findRoute.textContent = "Finding road routes…";
+    }
+    showBanner("Snapping walking paths to roads…", "info");
+
+    try {
+      state.routes = await buildRoadRoutesForDestination(dest);
+    } catch (err) {
+      console.warn(err);
+      state.routes = cloneRoutesForDestination(dest);
+    } finally {
+      if (els.findRoute) {
+        els.findRoute.disabled = false;
+        els.findRoute.textContent = "Find a route";
+      }
+    }
+
+    const recommended = state.routes.find((r) => r.recommended) || state.routes[0];
+    state.selectedRouteId = recommended.id;
+
+    if (els.routesSection) els.routesSection.hidden = false;
+    const allSnapped = state.routes.every((r) => r.roadSnapped);
+    showBanner(
+      allSnapped
+        ? "Recommended route updated · paths follow roads"
+        : "Recommended route updated · road service unavailable, using approximate paths",
+      allSnapped ? "success" : "warn"
+    );
+    renderRoutes();
+    evaluateThreshold();
+    setView("routes");
+    refreshMapOverlays();
+  }
+
+  function findRoutes() {
+    const query = (els.destination?.value || els.globalSearch?.value || "").trim();
+    showError("");
+
+    if (!query) {
+      showError("Enter a Melbourne CBD destination.");
+      return;
+    }
+
+    if (!isMelbourneCbdQuery(query)) {
+      showError("Please choose a destination within Melbourne CBD.");
+      return;
+    }
+
+    // Apply starting point from the single input before routing
+    const originValue = (els.originInput?.value || "").trim();
+    if (originValue && originValue.toLowerCase() !== "your location") {
+      const originPlace = matchPlace(originValue);
+      if (!originPlace) {
+        showError("Starting point not found. Try a CBD place or lat, lng.");
+        return;
+      }
+      setOrigin({
+        name: originPlace.name,
+        lat: originPlace.lat,
+        lng: originPlace.lng,
+        source: "custom",
+      });
+      renderOriginUi();
+      updateOriginMarker();
+    }
+
+    const matched = matchDestination(query) || {
+      id: "custom-cbd",
+      name: query,
+      lat: -37.8136,
+      lng: 144.9631,
+    };
+
+    planRoutesTo(matched);
+  }
+
+  /** Navigate to a refuge via CalmPath Route Planner (no external maps). */
+  function navigateToRefuge(refuge) {
+    if (!refuge) return;
+    planRoutesTo({
+      id: refuge.id,
+      name: refuge.name,
+      lat: refuge.latitude,
+      lng: refuge.longitude,
+    });
+  }
+
+  async function loadNearbyRefuges() {
+    if (!els.refugeList || !els.radiusSlider) return;
+
+    const radius_m = Number(els.radiusSlider.value);
+    const latitude = ORIGIN.lat;
+    const longitude = ORIGIN.lng;
+
+    try {
+      const results = await fetchNearbyRefugesMock(latitude, longitude, radius_m);
+      state.nearbyRefuges = results;
+
+      if (!results.length) {
+        els.refugeList.innerHTML =
+          '<div class="empty"><p class="empty__title">No quiet spaces in this radius</p><p>Try increasing the search radius.</p></div>';
+        state.selectedRefugeId = null;
+        refreshMapOverlays();
+        return;
+      }
+
+      if (!results.some((r) => r.id === state.selectedRefugeId)) {
+        state.selectedRefugeId = results[0].id;
+      }
+
+      renderRefugeList(results);
+      refreshMapOverlays();
+    } catch (err) {
+      els.refugeList.innerHTML =
+        '<div class="empty"><p class="empty__title">Could not load refuges</p><p>Check location and radius, then try again.</p></div>';
+      state.nearbyRefuges = [];
+      refreshMapOverlays();
+    }
+  }
+
+  function renderRefugeList(nearby) {
+    els.refugeList.innerHTML = nearby
+      .map((item) => {
+        const selected = item.id === state.selectedRefugeId;
+        return `
+      <div class="refuge-item${selected ? " is-selected" : ""}" data-refuge="${item.id}">
+        <button type="button" class="refuge-item__main" data-select-refuge="${item.id}">
+          <span class="refuge-item__icon" aria-hidden="true">${refugeIcon(item.type)}</span>
+          <span class="refuge-item__body">
+            <span class="refuge-item__name">${item.name}</span>
+            <span class="refuge-item__type">${refugeTypeLabel(item.type)}</span>
+            ${selected ? `<span class="refuge-item__address">${item.address}</span>` : ""}
+          </span>
+          <span class="refuge-item__distance">${Math.round(item.distance_m)}m</span>
+        </button>
+        ${
+          selected
+            ? `<button type="button" class="btn btn--primary btn--block refuge-item__nav" data-navigate-refuge="${item.id}">🧭 Navigate with Route Planner</button>`
+            : ""
+        }
+      </div>`;
+      })
+      .join("");
+
+    els.refugeList.querySelectorAll("[data-select-refuge]").forEach((btn) => {
+      btn.addEventListener("click", () => selectRefuge(btn.dataset.selectRefuge));
+    });
+    els.refugeList.querySelectorAll("[data-navigate-refuge]").forEach((btn) => {
+      btn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const refuge = state.nearbyRefuges.find((r) => r.id === btn.dataset.navigateRefuge);
+        navigateToRefuge(refuge);
+      });
+    });
+  }
+
+  function selectRefuge(id) {
+    state.selectedRefugeId = id;
+    renderRefugeList(state.nearbyRefuges);
+    refreshMapOverlays();
+  }
+
+  function renderRoutes() {
+    if (!els.routes) return;
+    if (!state.routes.length) {
+      els.routes.innerHTML = "";
+      return;
+    }
+
+    els.routes.innerHTML = state.routes
+      .map((route) => {
+        const selected = route.id === state.selectedRouteId;
+        const badge = route.limitedData ? "limited" : route.sensoryClass;
+        return `
+      <article class="route-card${selected ? " is-selected" : ""}" data-route="${route.id}" tabindex="0" role="button" aria-pressed="${selected}">
         <div class="route-card__top">
-          ${index === 0 ? '<span class="pill pill--selected">✓ Selected</span>' : "<span></span>"}
+          ${selected ? '<span class="pill pill--selected">✓ Selected</span>' : "<span></span>"}
           ${route.recommended ? '<span class="star" aria-label="Recommended">⭐</span>' : ""}
         </div>
         <div class="route-card__name">
-          <span class="route-card__dot route-card__dot--${route.sensoryClass}" aria-hidden="true"></span>
+          <span class="route-card__dot route-card__dot--${badge}" aria-hidden="true"></span>
           ${route.name}
         </div>
-        <p class="route-card__time">${route.time}</p>
+        <p class="route-card__time">${route.time} · ${route.distance}</p>
         <p class="route-card__label">${sensoryLabel(route)}</p>
+        <p class="route-card__note">${route.note}</p>
+      </article>`;
+      })
+      .join("");
+
+    els.routes.querySelectorAll("[data-route]").forEach((card) => {
+      card.addEventListener("click", () => selectRouteById(card.dataset.route));
+      card.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          selectRouteById(card.dataset.route);
+        }
+      });
+    });
+  }
+
+  function selectRouteById(id) {
+    state.selectedRouteId = id;
+    renderRoutes();
+    evaluateThreshold();
+    refreshMapOverlays();
+  }
+
+  function routesUnderThreshold() {
+    return state.routes.filter((r) => !r.limitedData && r.level <= state.threshold);
+  }
+
+  function bestAvailableRoute() {
+    return [...state.routes].sort((a, b) => {
+      if (a.level !== b.level) return a.level - b.level;
+      return a.crowdScore - b.crowdScore;
+    })[0];
+  }
+
+  function evaluateThreshold() {
+    if (!els.thresholdPanel) return;
+    if (!state.routes.length) {
+      els.thresholdPanel.hidden = true;
+      els.thresholdPanel.innerHTML = "";
+      return;
+    }
+
+    const current =
+      state.routes.find((r) => r.id === state.selectedRouteId) || state.routes[0];
+    const under = routesUnderThreshold();
+    const exceeds = current.level > state.threshold;
+
+    if (!exceeds) {
+      els.thresholdPanel.hidden = true;
+      els.thresholdPanel.innerHTML = "";
+      const busyHit = current.sensoryClass === "high";
+      if (busyHit) {
+        showBanner("Heavy crowd detected on some options. Recommended route avoids busy corridors.", "warn");
+      } else if (current.recommended) {
+        showBanner("Recommended route updated", "success");
+      }
+      return;
+    }
+
+    els.thresholdPanel.hidden = false;
+
+    if (under.length) {
+      const alt = under.sort((a, b) => a.crowdScore - b.crowdScore)[0];
+      showBanner("Heavy crowd detected. Route updated.", "warn");
+      els.thresholdPanel.innerHTML = `
+        <div class="threshold-card threshold-card--warn">
+          <p class="threshold-card__title">⚠️ Threshold Exceeded</p>
+          <p>Current route density is higher than your preferred threshold.</p>
+          <div class="threshold-card__current">
+            <strong>${current.name}</strong>
+            <span class="badge badge--${current.sensoryClass}">${sensoryLabel(current)}</span>
+            <span class="muted">Above Threshold</span>
+          </div>
+        </div>
+        <div class="threshold-card threshold-card--ok">
+          <p class="threshold-card__title">🟢 Alternative Found</p>
+          <p><strong>${alt.name}</strong> · ${alt.time} · ${alt.distance}</p>
+          <p class="muted">${sensoryLabel(alt)} · Avoids busy corridors · Matches your preference</p>
+          <button type="button" class="btn btn--primary btn--block" data-switch-route="${alt.id}">Switch to ${alt.name}</button>
+        </div>`;
+    } else {
+      const best = bestAvailableRoute();
+      showBanner("No route fully matches your preference.", "info");
+      els.thresholdPanel.innerHTML = `
+        <div class="threshold-card threshold-card--warn">
+          <p class="threshold-card__title">⚠️ Threshold Exceeded</p>
+          <p>All available routes are above your threshold.</p>
+          <div class="threshold-card__current">
+            <strong>${current.name}</strong>
+            <span class="badge badge--${current.sensoryClass}">${sensoryLabel(current)}</span>
+          </div>
+        </div>
+        <div class="threshold-card threshold-card--best">
+          <p class="threshold-card__title">⭐ Best Available</p>
+          <p><strong>${best.name}</strong> · ${best.time} · ${best.distance}</p>
+          <p class="muted">${sensoryLabel(best)} · Best available option</p>
+          <div class="threshold-card__actions">
+            <button type="button" class="btn btn--secondary" data-nav="settings">Adjust Threshold</button>
+            <button type="button" class="btn btn--primary" data-switch-route="${best.id}">Continue</button>
+          </div>
+        </div>`;
+    }
+
+    els.thresholdPanel.querySelectorAll("[data-switch-route]").forEach((btn) => {
+      btn.addEventListener("click", () => selectRouteById(btn.dataset.switchRoute));
+    });
+    els.thresholdPanel.querySelectorAll("[data-nav]").forEach((btn) => {
+      btn.addEventListener("click", () => setView(btn.dataset.nav));
+    });
+  }
+
+  function renderAlerts() {
+    if (!els.alertsList || typeof predictiveAlerts === "undefined") return;
+    els.alertsList.innerHTML = predictiveAlerts
+      .map(
+        (alert) => `
+      <article class="card alert-card" data-alert="${alert.id}">
+        <div class="card__row">
+          <div>
+            <p class="card__title">${alert.location}</p>
+            <p class="card__meta">Predicted Time · ${alert.timeframe}</p>
+          </div>
+          <span class="badge badge--${alert.crowdClass}"><span class="badge__icon" aria-hidden="true">${
+            alert.crowdClass === "high" ? "🔴" : alert.crowdClass === "medium" ? "🟡" : "🟢"
+          }</span> ${alert.crowdLevel}</span>
+        </div>
+        <p class="card__meta" style="margin-top:8px">${alert.message}</p>
+        <div class="card__foot">
+          <button type="button" class="btn btn--ghost btn--sm btn--block" data-alert-action="open" data-alert="${alert.id}">Details</button>
+        </div>
       </article>`
       )
       .join("");
 
-    routesEl.querySelectorAll("[data-route]").forEach((card) => {
-      card.addEventListener("click", () => selectRoute(card));
-      card.addEventListener("keydown", (event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          selectRoute(card);
-        }
-      });
-    });
-  }
-
-  function selectRoute(card) {
-    routesEl.querySelectorAll("[data-route]").forEach((el) => {
-      el.classList.remove("is-selected");
-      el.setAttribute("aria-pressed", "false");
-      const top = el.querySelector(".route-card__top");
-      if (top) {
-        const star = top.querySelector(".star");
-        top.innerHTML = "<span></span>";
-        if (star) top.appendChild(star);
-      }
-    });
-
-    card.classList.add("is-selected");
-    card.setAttribute("aria-pressed", "true");
-    const top = card.querySelector(".route-card__top");
-    if (top) {
-      const star = top.querySelector(".star");
-      top.innerHTML = '<span class="pill pill--selected">✓ Selected</span>';
-      if (star) top.appendChild(star);
-      else if (card.dataset.route === "a") {
-        top.insertAdjacentHTML(
-          "beforeend",
-          '<span class="star" aria-label="Recommended">⭐</span>'
-        );
-      }
-    }
-  }
-
-  function renderRefuges() {
-    if (!refugeListEl || typeof refuges === "undefined" || !radiusSlider) return;
-
-    const radius = Number(radiusSlider.value);
-    const nearby = refuges.filter((item) => item.distance <= radius);
-
-    if (!nearby.length) {
-      refugeListEl.innerHTML =
-        '<div class="empty"><p class="empty__title">No quiet spaces in this radius</p><p>Try increasing the search radius.</p></div>';
-      return;
-    }
-
-    refugeListEl.innerHTML = nearby
-      .map(
-        (item, index) => `
-      <button type="button" class="refuge-item${index === 0 ? " is-selected" : ""}" data-refuge="${item.id}">
-        <span class="refuge-item__icon" aria-hidden="true">${item.icon}</span>
-        <span>
-          <span class="refuge-item__name">${item.name}</span>
-          <span class="refuge-item__type">${item.type}</span>
-          ${index === 0 ? `<span class="refuge-item__address">${item.address}</span>` : ""}
-        </span>
-        <span class="refuge-item__distance">${item.distance}m</span>
-      </button>`
-      )
-      .join("");
-
-    refugeListEl.querySelectorAll("[data-refuge]").forEach((btn) => {
+    els.alertsList.querySelectorAll("[data-alert-action]").forEach((btn) => {
       btn.addEventListener("click", () => {
-        const selected = refuges.find((r) => r.id === btn.dataset.refuge);
-        refugeListEl.querySelectorAll(".refuge-item").forEach((el) => {
-          el.classList.remove("is-selected");
-          const addr = el.querySelector(".refuge-item__address");
-          if (addr) addr.remove();
-        });
-        btn.classList.add("is-selected");
-        if (selected) {
-          const mid = btn.children[1];
-          if (mid && !mid.querySelector(".refuge-item__address")) {
-            const address = document.createElement("span");
-            address.className = "refuge-item__address";
-            address.textContent = selected.address;
-            mid.appendChild(address);
-          }
-        }
+        const alert = predictiveAlerts.find((a) => a.id === btn.dataset.alert);
+        if (alert) openAlertModal(alert);
       });
     });
+  }
+
+  function openAlertModal(alert) {
+    if (!els.modal) return;
+    els.modalTitle.textContent = alert.location;
+    els.modalMeta.innerHTML = `
+      <div><dt>Location</dt><dd>${alert.location}</dd></div>
+      <div><dt>Predicted Time</dt><dd>${alert.timeframe}</dd></div>
+      <div><dt>Crowd Level</dt><dd>${alert.crowdLevel}</dd></div>`;
+    els.modalMessage.textContent = alert.message;
+    els.modal.hidden = false;
+    els.modal.classList.add("is-open");
+  }
+
+  function closeAlertModal() {
+    if (!els.modal) return;
+    els.modal.hidden = true;
+    els.modal.classList.remove("is-open");
+  }
+
+  function goToQuieterRoutes() {
+    closeAlertModal();
+    if (!state.routes.length) {
+      if (els.destination && !els.destination.value) {
+        els.destination.value = "State Library Victoria";
+        syncDestinationInputs("State Library Victoria", "both");
+      }
+      findRoutes();
+    } else {
+      const quiet = [...state.routes].sort((a, b) => a.crowdScore - b.crowdScore)[0];
+      selectRouteById(quiet.id);
+      setView("routes");
+    }
   }
 
   function wireRadiusSlider() {
-    if (!radiusSlider || !radiusValue) return;
-
+    if (!els.radiusSlider || !els.radiusValue) return;
     const sync = () => {
-      const meters = Number(radiusSlider.value);
-      radiusValue.textContent = formatRadius(meters);
-      radiusSlider.setAttribute("aria-valuenow", String(meters));
-      updateSliderFill(radiusSlider);
-      renderRefuges();
+      const meters = Number(els.radiusSlider.value);
+      els.radiusValue.textContent = formatRadius(meters);
+      els.radiusSlider.setAttribute("aria-valuenow", String(meters));
+      updateSliderFill(els.radiusSlider);
+      if (state.mapMode === "refuges" || document.getElementById("view-refuges")?.classList.contains("is-active")) {
+        loadNearbyRefuges();
+      }
     };
-
-    radiusSlider.addEventListener("input", sync);
+    els.radiusSlider.addEventListener("input", sync);
     sync();
   }
 
   function wireThresholdSlider() {
-    if (!thresholdSlider || !thresholdValue) return;
-
+    if (!els.thresholdSlider || !els.thresholdValue) return;
     const sync = () => {
-      const index = Number(thresholdSlider.value);
+      const index = Number(els.thresholdSlider.value);
       const label = thresholdLabels[index] || "Low";
-      thresholdValue.textContent = label;
-      thresholdSlider.setAttribute("aria-valuenow", String(index));
-      thresholdSlider.setAttribute("aria-valuetext", label);
-      updateSliderFill(thresholdSlider);
+      els.thresholdValue.textContent = label;
+      els.thresholdSlider.setAttribute("aria-valuenow", String(index));
+      els.thresholdSlider.setAttribute("aria-valuetext", label);
+      updateSliderFill(els.thresholdSlider);
+      saveThreshold(index);
+      evaluateThreshold();
     };
-
-    thresholdSlider.addEventListener("input", sync);
+    els.thresholdSlider.addEventListener("input", sync);
     sync();
   }
 
-  const findRouteBtn = document.getElementById("find-route");
-  if (findRouteBtn) {
-    findRouteBtn.addEventListener("click", () => {
-      setView("routes");
-      renderRoutes();
+  function wireSearch() {
+    els.destination?.addEventListener("input", () => {
+      syncDestinationInputs(els.destination.value, "destination");
+      showError("");
+    });
+    els.globalSearch?.addEventListener("input", () => {
+      syncDestinationInputs(els.globalSearch.value, "global");
+      showError("");
+    });
+    els.globalSearch?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        findRoutes();
+      }
+    });
+    els.destination?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        findRoutes();
+      }
     });
   }
 
+  els.navItems.forEach((item) => {
+    item.addEventListener("click", () => setView(item.dataset.nav));
+  });
+
+  els.findRoute?.addEventListener("click", findRoutes);
+  els.modalClose?.addEventListener("click", closeAlertModal);
+  els.modalRoutes?.addEventListener("click", goToQuieterRoutes);
+  els.modalRefuges?.addEventListener("click", () => {
+    closeAlertModal();
+    setView("refuges");
+  });
+  els.modal?.addEventListener("click", (event) => {
+    if (event.target === els.modal) closeAlertModal();
+  });
+
   document.addEventListener("DOMContentLoaded", () => {
-    renderRoutes();
+    loadThreshold();
+    initDatalist();
+    initMap();
+    wireSearch();
+    wireOriginEditor();
     wireRadiusSlider();
     wireThresholdSlider();
+    renderAlerts();
+    renderOriginUi();
+    detectUserLocation();
   });
 })();
