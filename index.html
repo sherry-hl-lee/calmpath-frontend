@@ -124,25 +124,39 @@
             </header>
 
             <div class="field">
+              <label class="field__label" for="refuge-location">Location</label>
+              <input
+                id="refuge-location"
+                class="input"
+                type="text"
+                list="cbd-destinations"
+                value="Your location"
+                placeholder="Your location or CBD place"
+                autocomplete="off"
+              >
+            </div>
+            <p id="refuge-location-error" class="field-error" hidden></p>
+
+            <div class="field">
               <div class="slider-head">
                 <label class="field__label" for="radius-slider">Search radius</label>
-                <span class="slider-value" id="radius-value">750m</span>
+                <span class="slider-value" id="radius-value">2km</span>
               </div>
               <input
                 id="radius-slider"
                 class="slider"
                 type="range"
-                min="0"
-                max="1000"
-                step="50"
-                value="750"
-                aria-valuemin="0"
-                aria-valuemax="1000"
-                aria-valuenow="750"
+                min="100"
+                max="5000"
+                step="100"
+                value="2000"
+                aria-valuemin="100"
+                aria-valuemax="5000"
+                aria-valuenow="2000"
               >
               <div class="slider-ends">
-                <span>0</span>
-                <span>1km</span>
+                <span>100m</span>
+                <span>5km</span>
               </div>
             </div>
 

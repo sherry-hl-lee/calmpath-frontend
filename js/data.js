@@ -258,71 +258,122 @@ const PT_STOPS = [
   { id: "tram-swanston", type: "Tram", icon: "🚋", lat: -37.8135, lng: 144.9635 },
 ];
 
+/** US2.1 nearby shape: no address. Types only park | library (from sub_theme). */
 const REFUGE_CATALOG = [
   {
-    id: "refuge-001",
+    id: "ea40efc1f181c0943d97b001",
     name: "Flagstaff Gardens",
     type: "park",
     latitude: -37.8105,
     longitude: 144.9542,
-    address: "309-311 William St, West Melbourne VIC 3003",
   },
   {
-    id: "refuge-002",
+    id: "ea40efc1f181c0943d97b002",
     name: "State Library Victoria",
     type: "library",
     latitude: -37.8098,
     longitude: 144.9652,
-    address: "328 Swanston St, Melbourne VIC 3000",
   },
   {
-    id: "refuge-003",
-    name: "Quiet Corner Cafe",
-    type: "cafe",
-    latitude: -37.8112,
-    longitude: 144.9605,
-    address: "Little Lonsdale St, Melbourne VIC 3000",
-  },
-  {
-    id: "refuge-004",
+    id: "ea40efc1f181c0943d97b003",
     name: "Treasury Gardens",
     type: "park",
     latitude: -37.8142,
     longitude: 144.9755,
-    address: "2 Treasury Pl, East Melbourne VIC 3002",
   },
 ];
+
+/** Mock nearest street matches for GET /api/v1/refuges/address (keyed by refuge id). */
+const REFUGE_ADDRESS_MOCK = {
+  ea40efc1f181c0943d97b001: {
+    address: "309 William Street West Melbourne",
+    latitude: -37.81048,
+    longitude: 144.95415,
+    match_distance_m: 28.4,
+    source: "City of Melbourne Street Addresses",
+  },
+  ea40efc1f181c0943d97b002: {
+    address: "328 Swanston Street Melbourne",
+    latitude: -37.80982,
+    longitude: 144.96525,
+    match_distance_m: 12.1,
+    source: "City of Melbourne Street Addresses",
+  },
+  // Treasury Gardens: no street address within 200 m (demo 404)
+};
 
 /** Kept for compatibility; distances are computed from current ORIGIN */
 const refuges = REFUGE_CATALOG;
 
-/** Mock of GET /api/v1/refuges/nearby — same shape as the API contract */
-function fetchNearbyRefugesMock(latitude, longitude, radius_m) {
+function createApiError(status, detail, retryAfter) {
+  const err = new Error(detail || `HTTP ${status}`);
+  err.status = status;
+  err.detail = detail;
+  if (retryAfter != null) err.retryAfter = retryAfter;
+  return err;
+}
+
+function validateRefugeCoords(latitude, longitude) {
   const lat = Number(latitude);
   const lng = Number(longitude);
-  const radius = Number(radius_m);
-
   if (
     !Number.isFinite(lat) ||
     lat < -90 ||
     lat > 90 ||
     !Number.isFinite(lng) ||
     lng < -180 ||
-    lng > 180 ||
-    !Number.isFinite(radius) ||
-    radius <= 0
+    lng > 180
   ) {
-    return Promise.reject(new Error("422 Unprocessable Entity"));
+    return null;
+  }
+  return { lat, lng };
+}
+
+/** Mock of GET /api/v1/refuges/nearby — bare array, no address field */
+function fetchNearbyRefugesMock(latitude, longitude, radius_m) {
+  const coords = validateRefugeCoords(latitude, longitude);
+  const radius = Number(radius_m);
+
+  if (!coords || !Number.isFinite(radius) || radius <= 0) {
+    return Promise.reject(createApiError(422, "Invalid latitude, longitude, or radius_m"));
   }
 
   const results = REFUGE_CATALOG.map((r) => ({
-    ...r,
-    distance_m: Math.round(haversineMeters(lat, lng, r.latitude, r.longitude)),
+    id: r.id,
+    name: r.name,
+    type: r.type,
+    latitude: r.latitude,
+    longitude: r.longitude,
+    distance_m: Math.round(haversineMeters(coords.lat, coords.lng, r.latitude, r.longitude) * 100) / 100,
   }))
     .filter((r) => r.distance_m <= radius)
     .sort((a, b) => a.distance_m - b.distance_m);
 
   return Promise.resolve(results);
+}
+
+/**
+ * Mock of GET /api/v1/refuges/address — call only after the user selects a refuge.
+ * Fixed backend match radius is 200 m; this mock does not accept a custom radius.
+ */
+function fetchRefugeAddressMock(latitude, longitude) {
+  const coords = validateRefugeCoords(latitude, longitude);
+  if (!coords) {
+    return Promise.reject(createApiError(422, "Invalid latitude or longitude"));
+  }
+
+  const match = REFUGE_CATALOG.find(
+    (r) => haversineMeters(coords.lat, coords.lng, r.latitude, r.longitude) < 5
+  );
+  const payload = match ? REFUGE_ADDRESS_MOCK[match.id] : null;
+
+  if (!payload) {
+    return Promise.reject(
+      createApiError(404, "No valid street address within 200 m of this location")
+    );
+  }
+
+  return Promise.resolve({ ...payload });
 }
 
 function refugeTypeLabel(type) {
@@ -333,8 +384,20 @@ function refugeTypeLabel(type) {
 function refugeIcon(type) {
   if (type === "park") return "🌳";
   if (type === "library") return "📚";
-  if (type === "cafe") return "☕";
   return "📍";
+}
+
+function formatRefugeAddressLine(status) {
+  if (!status) return "";
+  if (status.state === "loading") return "Looking up nearby street address…";
+  if (status.state === "ok" && status.data) return status.data.address;
+  if (status.state === "error") {
+    if (status.status === 404) return "No street address within 200 m (refuge still valid)";
+    if (status.status === 429) return "Address lookup limited — try again shortly";
+    if (status.status === 503) return "Address service temporarily unavailable";
+    return status.message || "Could not load address";
+  }
+  return "";
 }
 
 function matchPlace(query) {
