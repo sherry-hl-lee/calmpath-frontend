@@ -9,6 +9,19 @@
     destination: null,
     nearbyRefuges: [],
     selectedRefugeId: null,
+    /** Page-session cache for GET /api/v1/refuges/address (US2.1) */
+    refugeAddressById: {},
+    addressRequestId: null,
+    /**
+     * Search centre for Quiet Refuges.
+     * followsOrigin: keep synced with GPS / route starting point.
+     */
+    refugeLocation: {
+      name: "Your location",
+      lat: DEFAULT_ORIGIN.lat,
+      lng: DEFAULT_ORIGIN.lng,
+      followsOrigin: true,
+    },
     mapMode: "routes",
   };
 
@@ -18,6 +31,8 @@
     routes: document.getElementById("routes"),
     routesSection: document.getElementById("routes-section"),
     refugeList: document.getElementById("refuge-list"),
+    refugeLocation: document.getElementById("refuge-location"),
+    refugeLocationError: document.getElementById("refuge-location-error"),
     alertsList: document.getElementById("alerts-list"),
     radiusSlider: document.getElementById("radius-slider"),
     radiusValue: document.getElementById("radius-value"),
@@ -89,8 +104,95 @@
   }
 
   function formatRadius(meters) {
-    if (meters >= 1000) return "1km";
+    if (meters >= 1000) {
+      const km = meters / 1000;
+      return Number.isInteger(km) ? `${km}km` : `${km.toFixed(1)}km`;
+    }
     return `${meters}m`;
+  }
+
+  function showRefugeLocationError(message) {
+    if (!els.refugeLocationError) return;
+    els.refugeLocationError.hidden = !message;
+    els.refugeLocationError.textContent = message || "";
+  }
+
+  function renderRefugeLocationUi() {
+    if (els.refugeLocation && document.activeElement !== els.refugeLocation) {
+      els.refugeLocation.value = state.refugeLocation.name;
+    }
+  }
+
+  function setRefugeLocation(place, options = {}) {
+    const followsOrigin = Boolean(options.followsOrigin);
+    state.refugeLocation = {
+      name: place.name || "Custom location",
+      lat: place.lat,
+      lng: place.lng,
+      followsOrigin,
+    };
+    renderRefugeLocationUi();
+  }
+
+  function syncRefugeLocationFromOrigin() {
+    if (!state.refugeLocation.followsOrigin) return;
+    setRefugeLocation(
+      {
+        name: "Your location",
+        lat: ORIGIN.lat,
+        lng: ORIGIN.lng,
+      },
+      { followsOrigin: true }
+    );
+  }
+
+  function commitRefugeLocationFromInput() {
+    const value = (els.refugeLocation?.value || "").trim();
+    if (!value) return false;
+
+    if (value.toLowerCase() === "your location") {
+      showRefugeLocationError("");
+      setRefugeLocation(
+        {
+          name: "Your location",
+          lat: ORIGIN.lat,
+          lng: ORIGIN.lng,
+        },
+        { followsOrigin: true }
+      );
+      loadNearbyRefuges();
+      return true;
+    }
+
+    const place = matchPlace(value);
+    if (!place) {
+      showRefugeLocationError("Location not found. Try a CBD place or lat, lng.");
+      return false;
+    }
+
+    showRefugeLocationError("");
+    setRefugeLocation(
+      {
+        name: place.name,
+        lat: place.lat,
+        lng: place.lng,
+      },
+      { followsOrigin: false }
+    );
+    loadNearbyRefuges();
+    return true;
+  }
+
+  function wireRefugeLocationEditor() {
+    els.refugeLocation?.addEventListener("change", () => {
+      commitRefugeLocationFromInput();
+    });
+    els.refugeLocation?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        commitRefugeLocationFromInput();
+      }
+    });
   }
 
   function sensoryLabel(route) {
@@ -153,6 +255,7 @@
     });
     renderOriginUi();
     updateOriginMarker();
+    syncRefugeLocationFromOrigin();
     loadNearbyRefuges();
     if (state.destination) {
       planRoutesTo(state.destination);
@@ -188,6 +291,7 @@
         });
         renderOriginUi();
         updateOriginMarker();
+        syncRefugeLocationFromOrigin();
         loadNearbyRefuges();
       },
       { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
@@ -339,22 +443,28 @@
     }
   }
 
+  function getRefugeAddressStatus(id) {
+    return state.refugeAddressById[id] || null;
+  }
+
   function drawRefugesOnMap(items) {
     clearGroup(layers.refuges);
     (items || []).forEach((item) => {
       const selected = item.id === state.selectedRefugeId;
+      const addressLine = formatRefugeAddressLine(getRefugeAddressStatus(item.id));
       const icon = L.divIcon({
         className: `map-refuge-icon${selected ? " is-selected" : ""}`,
         html: `<span>${refugeIcon(item.type)}</span>`,
         iconSize: [34, 34],
         iconAnchor: [17, 17],
       });
+      const popupBits = [
+        `<strong>${item.name}</strong>`,
+        `${refugeTypeLabel(item.type)} · ${Math.round(item.distance_m)}m`,
+      ];
+      if (selected && addressLine) popupBits.push(addressLine);
       L.marker([item.latitude, item.longitude], { icon })
-        .bindPopup(
-          `<strong>${item.name}</strong><br>${refugeTypeLabel(item.type)} · ${Math.round(
-            item.distance_m
-          )}m<br>${item.address}`
-        )
+        .bindPopup(popupBits.join("<br>"))
         .on("click", () => selectRefuge(item.id))
         .addTo(layers.refuges);
     });
@@ -370,7 +480,7 @@
         map.fitBounds(
           nearby
             .map((r) => [r.latitude, r.longitude])
-            .concat([[ORIGIN.lat, ORIGIN.lng]]),
+            .concat([[state.refugeLocation.lat, state.refugeLocation.lng]]),
           { padding: [40, 40] }
         );
       }
@@ -478,27 +588,28 @@
     if (!els.refugeList || !els.radiusSlider) return;
 
     const radius_m = Number(els.radiusSlider.value);
-    const latitude = ORIGIN.lat;
-    const longitude = ORIGIN.lng;
+    const loc = state.refugeLocation;
 
     try {
-      const results = await fetchNearbyRefugesMock(latitude, longitude, radius_m);
+      const results = await fetchNearbyRefugesMock(loc.lat, loc.lng, radius_m);
       state.nearbyRefuges = results;
 
       if (!results.length) {
         els.refugeList.innerHTML =
-          '<div class="empty"><p class="empty__title">No quiet spaces in this radius</p><p>Try increasing the search radius.</p></div>';
+          '<div class="empty"><p class="empty__title">No quiet spaces in this radius</p><p>Try another location or increase the search radius.</p></div>';
         state.selectedRefugeId = null;
         refreshMapOverlays();
         return;
       }
 
-      if (!results.some((r) => r.id === state.selectedRefugeId)) {
+      const stillVisible = results.some((r) => r.id === state.selectedRefugeId);
+      if (!stillVisible) {
         state.selectedRefugeId = results[0].id;
       }
 
       renderRefugeList(results);
       refreshMapOverlays();
+      await ensureRefugeAddress(state.selectedRefugeId);
     } catch (err) {
       els.refugeList.innerHTML =
         '<div class="empty"><p class="empty__title">Could not load refuges</p><p>Check location and radius, then try again.</p></div>';
@@ -511,6 +622,9 @@
     els.refugeList.innerHTML = nearby
       .map((item) => {
         const selected = item.id === state.selectedRefugeId;
+        const addressLine = selected
+          ? formatRefugeAddressLine(getRefugeAddressStatus(item.id))
+          : "";
         return `
       <div class="refuge-item${selected ? " is-selected" : ""}" data-refuge="${item.id}">
         <button type="button" class="refuge-item__main" data-select-refuge="${item.id}">
@@ -518,7 +632,11 @@
           <span class="refuge-item__body">
             <span class="refuge-item__name">${item.name}</span>
             <span class="refuge-item__type">${refugeTypeLabel(item.type)}</span>
-            ${selected ? `<span class="refuge-item__address">${item.address}</span>` : ""}
+            ${
+              selected && addressLine
+                ? `<span class="refuge-item__address">${addressLine}</span>`
+                : ""
+            }
           </span>
           <span class="refuge-item__distance">${Math.round(item.distance_m)}m</span>
         </button>
@@ -543,10 +661,78 @@
     });
   }
 
+  /**
+   * US2.1: call /refuges/address only on select; at most one in-flight request per
+   * selection; reuse successful page-session cache; no automatic retry loop.
+   */
+  async function ensureRefugeAddress(id, options = {}) {
+    if (!id) return;
+
+    const force = Boolean(options.force);
+    const cached = getRefugeAddressStatus(id);
+
+    if (!force && cached && cached.state === "ok") {
+      renderRefugeList(state.nearbyRefuges);
+      refreshMapOverlays();
+      return;
+    }
+    if (!force && cached && cached.state === "error") {
+      renderRefugeList(state.nearbyRefuges);
+      refreshMapOverlays();
+      return;
+    }
+    if (!force && cached && cached.state === "loading") return;
+
+    const refuge = state.nearbyRefuges.find((r) => r.id === id);
+    if (!refuge) return;
+
+    const requestToken = `${id}:${refuge.latitude},${refuge.longitude}:${Date.now()}`;
+    state.addressRequestId = requestToken;
+
+    state.refugeAddressById[id] = { state: "loading" };
+    if (state.selectedRefugeId === id) {
+      renderRefugeList(state.nearbyRefuges);
+      refreshMapOverlays();
+    }
+
+    try {
+      const data = await fetchRefugeAddressMock(refuge.latitude, refuge.longitude);
+      if (state.addressRequestId === requestToken) {
+        state.refugeAddressById[id] = { state: "ok", data };
+      }
+    } catch (err) {
+      if (state.addressRequestId === requestToken) {
+        state.refugeAddressById[id] = {
+          state: "error",
+          status: err.status || 0,
+          message: err.detail || err.message,
+          retryAfter: err.retryAfter,
+        };
+      }
+    } finally {
+      if (state.addressRequestId === requestToken) {
+        state.addressRequestId = null;
+      }
+      if (state.selectedRefugeId === id) {
+        renderRefugeList(state.nearbyRefuges);
+        refreshMapOverlays();
+      }
+    }
+  }
+
   function selectRefuge(id) {
+    const prevId = state.selectedRefugeId;
+    const cached = getRefugeAddressStatus(id);
     state.selectedRefugeId = id;
     renderRefugeList(state.nearbyRefuges);
     refreshMapOverlays();
+    // Manual re-click may retry transient errors; never auto-loop. 404 stays cached.
+    const force =
+      id === prevId &&
+      cached &&
+      cached.state === "error" &&
+      cached.status !== 404;
+    ensureRefugeAddress(id, { force });
   }
 
   function renderRoutes() {
@@ -822,10 +1008,12 @@
     initMap();
     wireSearch();
     wireOriginEditor();
+    wireRefugeLocationEditor();
     wireRadiusSlider();
     wireThresholdSlider();
     renderAlerts();
     renderOriginUi();
+    renderRefugeLocationUi();
     detectUserLocation();
   });
 })();
