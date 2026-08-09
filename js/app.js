@@ -591,7 +591,7 @@
     const loc = state.refugeLocation;
 
     try {
-      const results = await fetchNearbyRefugesMock(loc.lat, loc.lng, radius_m);
+      const results = await fetchNearbyRefuges(loc.lat, loc.lng, radius_m);
       state.nearbyRefuges = results;
 
       if (!results.length) {
@@ -696,7 +696,7 @@
     }
 
     try {
-      const data = await fetchRefugeAddressMock(refuge.latitude, refuge.longitude);
+      const data = await fetchRefugeAddress(refuge.latitude, refuge.longitude);
       if (state.addressRequestId === requestToken) {
         state.refugeAddressById[id] = { state: "ok", data };
       }
