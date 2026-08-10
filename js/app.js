@@ -295,9 +295,15 @@
   function updateOriginMarker() {
     if (!map || !layers.markers) return;
     clearGroup(layers.markers);
-    originMarker = L.marker([ORIGIN.lat, ORIGIN.lng])
+    originMarker = L.circleMarker([ORIGIN.lat, ORIGIN.lng], {
+      radius: 8,
+      color: "#1c1c1e",
+      fillColor: "#ffffff",
+      fillOpacity: 1,
+      weight: 3,
+    })
       .addTo(layers.markers)
-      .bindPopup(`📍 Start · ${ORIGIN.name}`);
+      .bindPopup(`Start · ${ORIGIN.name}`);
     map.panTo([ORIGIN.lat, ORIGIN.lng]);
   }
 
@@ -389,13 +395,7 @@
     });
 
     if (state.destination) {
-      L.circleMarker([state.destination.lat, state.destination.lng], {
-        radius: 8,
-        color: "#1c1c1e",
-        fillColor: "#ffffff",
-        fillOpacity: 1,
-        weight: 3,
-      })
+      L.marker([state.destination.lat, state.destination.lng])
         .bindPopup(state.destination.name)
         .addTo(layers.routes);
       bounds.push([state.destination.lat, state.destination.lng]);
