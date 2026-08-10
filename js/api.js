@@ -1,11 +1,7 @@
-/* CalmPath — US2.1 refuge API client
+/* CalmPath — backend API client
  *
- * The deployed FastAPI backend is the primary source. Direct City of Melbourne
- * open data remains available as a development fallback:
- *   - primary: Park/Garden/Reserve → park, Library → library
- *   - address: nearest street-addresses within 200 m
- *
- * Response shapes match US2.1_API.md.
+ * Refuge: deployed FastAPI + CloudFront (open-data fallback for dev).
+ * Routes: POST /api/v1/routes/compare (OSRM fallback until backend is live).
  */
 
 const API_BASE = "https://dpevp4238kw5k.cloudfront.net";
@@ -215,4 +211,154 @@ async function fetchRefugeAddress(latitude, longitude) {
     console.warn("Open data address failed; using mock.", err);
     return fetchRefugeAddressMock(latitude, longitude);
   }
+}
+
+function geoJsonToLeafletPath(geometry) {
+  if (!geometry || geometry.type !== "LineString" || !Array.isArray(geometry.coordinates)) {
+    return [];
+  }
+  return geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+}
+
+function crowdLevelToUi(crowdLevel, limitedData) {
+  if (limitedData || crowdLevel == null) {
+    return { level: LEVEL.limited, sensoryClass: "limited", limitedData: true };
+  }
+  const key = String(crowdLevel).toUpperCase();
+  if (key === "LOW") return { level: LEVEL.low, sensoryClass: "low", limitedData: false };
+  if (key === "MEDIUM") return { level: LEVEL.medium, sensoryClass: "medium", limitedData: false };
+  if (key === "HIGH") return { level: LEVEL.high, sensoryClass: "high", limitedData: false };
+  return { level: LEVEL.limited, sensoryClass: "limited", limitedData: true };
+}
+
+function buildRouteNote(apiRoute) {
+  if (apiRoute.limited_data) return "Limited sensor coverage on this route";
+  if (apiRoute.has_congestion_warning) return "High pedestrian congestion detected on part of this route";
+  if (apiRoute.crowd_level && apiRoute.sensory_level) {
+    return `${apiRoute.crowd_level} crowd · ${apiRoute.sensory_level} sensory`;
+  }
+  return apiRoute.route_type === "shortest" ? "Shortest walking path" : "Lower crowd exposure route";
+}
+
+function mapApiRoute(apiRoute, id, name, recommended) {
+  const ui = crowdLevelToUi(apiRoute.crowd_level, apiRoute.limited_data);
+  const geometry = apiRoute.geometry || null;
+  return {
+    id,
+    name,
+    ...ui,
+    crowdScore: Number.isFinite(apiRoute.crowd_exposure) ? apiRoute.crowd_exposure : 999,
+    path: geoJsonToLeafletPath(geometry),
+    geometry,
+    distance: formatDistance(apiRoute.distance_m),
+    time: formatDuration(apiRoute.walk_time_seconds),
+    distanceM: apiRoute.distance_m,
+    roadSnapped: true,
+    recommended: Boolean(recommended),
+    note: buildRouteNote(apiRoute),
+    routeType: apiRoute.route_type,
+  };
+}
+
+/** Map POST /api/v1/routes/compare response to UI route cards. */
+function mapRoutesCompareResponse(response) {
+  const routes = [];
+  const shortest = mapApiRoute(response.shortest_route, "shortest", "Shortest Route", false);
+
+  if (response.recommended_route_is_distinct) {
+    const recommended = mapApiRoute(
+      response.recommended_route,
+      "recommended",
+      "Recommended Route",
+      response.recommendation_status === "LOWER_CROWD"
+    );
+    routes.push(recommended, shortest);
+  } else {
+    shortest.recommended = response.recommendation_status === "SHORTEST_ALREADY_BEST";
+    if (response.recommendation_status === "SHORTEST_ALREADY_BEST") {
+      shortest.name = "Shortest Route (Best Available)";
+    }
+    routes.push(shortest);
+  }
+
+  return {
+    routes,
+    meta: {
+      source: "backend",
+      recommendation_status: response.recommendation_status,
+      recommendation_note: response.recommendation_note,
+      warning: response.warning,
+      crowd_exposure_reduction_percent: response.crowd_exposure_reduction_percent,
+      recommended_route_is_distinct: response.recommended_route_is_distinct,
+      data_as_of: response.data_as_of,
+    },
+  };
+}
+
+function bannerForRouteCompare(meta) {
+  if (!meta || meta.source !== "backend") {
+    return { message: "Routes updated", type: "success" };
+  }
+  switch (meta.recommendation_status) {
+    case "LOWER_CROWD":
+      return {
+        message:
+          meta.crowd_exposure_reduction_percent != null
+            ? `Recommended route reduces crowd exposure by ${Math.round(meta.crowd_exposure_reduction_percent)}%`
+            : meta.recommendation_note || "Recommended route has lower crowd exposure",
+        type: "success",
+      };
+    case "SHORTEST_ALREADY_BEST":
+      return {
+        message: meta.recommendation_note || "Shortest route is already the best available option",
+        type: "info",
+      };
+    case "INSUFFICIENT_DATA":
+      return {
+        message: meta.warning || "Limited data — route comparison may be incomplete",
+        type: "warn",
+      };
+    case "NO_ALTERNATIVE":
+      return {
+        message: meta.warning || "No quieter alternative route found",
+        type: "info",
+      };
+    default:
+      return { message: meta.recommendation_note || "Routes updated", type: "success" };
+  }
+}
+
+async function fetchRoutesCompareFromBackend(origin, destination) {
+  const res = await fetch(`${API_BASE}/api/v1/routes/compare`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ origin, destination }),
+  });
+  if (!res.ok) {
+    throw createApiError(res.status, await res.text());
+  }
+  return mapRoutesCompareResponse(await res.json());
+}
+
+/**
+ * Compare routes (backend first, OSRM demo fallback).
+ * Returns { routes, meta }.
+ */
+async function fetchRoutesCompare(originLat, originLng, dest) {
+  const origin = { latitude: originLat, longitude: originLng };
+  const destination = { latitude: dest.lat, longitude: dest.lng };
+
+  if (API_BASE) {
+    try {
+      return await fetchRoutesCompareFromBackend(origin, destination);
+    } catch (err) {
+      console.warn("Routes compare API unavailable; using OSRM fallback.", err);
+    }
+  }
+
+  const routes = await buildRoadRoutesForDestination(dest);
+  return {
+    routes,
+    meta: { source: "osrm", recommendation_status: null },
+  };
 }

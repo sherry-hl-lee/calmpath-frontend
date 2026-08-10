@@ -1,18 +1,38 @@
 /* CalmPath — Melbourne CBD mock data (Open Data–style demo) */
 
+/** Default search/start point — Flinders Street Station (Melbourne CBD) */
 const DEFAULT_ORIGIN = {
-  name: "Your location",
+  name: "Flinders Street Station",
   lat: -37.8183,
   lng: 144.9671,
 };
 
-/** Mutable start point — defaults to user location or Flinders fallback */
+/** Mutable start point — user-entered CBD place (no GPS) */
 const ORIGIN = {
   name: DEFAULT_ORIGIN.name,
   lat: DEFAULT_ORIGIN.lat,
   lng: DEFAULT_ORIGIN.lng,
   source: "default",
 };
+
+/** Rough City of Melbourne / CBD coverage for typed coordinates */
+const CBD_BOUNDS = {
+  minLat: -37.85,
+  maxLat: -37.775,
+  minLng: 144.90,
+  maxLng: 145.00,
+};
+
+function isWithinMelbourneCbd(lat, lng) {
+  return (
+    Number.isFinite(lat) &&
+    Number.isFinite(lng) &&
+    lat >= CBD_BOUNDS.minLat &&
+    lat <= CBD_BOUNDS.maxLat &&
+    lng >= CBD_BOUNDS.minLng &&
+    lng <= CBD_BOUNDS.maxLng
+  );
+}
 
 function setOrigin(next) {
   if (!next || !Number.isFinite(next.lat) || !Number.isFinite(next.lng)) return ORIGIN;
@@ -466,7 +486,12 @@ function matchDestination(query) {
 function isMelbourneCbdQuery(query) {
   const q = String(query || "").trim().toLowerCase();
   if (!q) return false;
-  if (matchDestination(q)) return true;
+  if (q === "your location") return false;
+  const matched = matchDestination(q);
+  if (matched) {
+    if (matched.id === "coords") return isWithinMelbourneCbd(matched.lat, matched.lng);
+    return true;
+  }
   return (
     q.includes("melbourne") ||
     q.includes("cbd") ||
@@ -474,4 +499,19 @@ function isMelbourneCbdQuery(query) {
     q.includes("collins") ||
     q.includes("bourke")
   );
+}
+
+/**
+ * Resolve a typed place to a Melbourne CBD location.
+ * Accepts known CBD names or lat,lng inside CBD bounds. Rejects GPS/"Your location".
+ */
+function resolveCbdPlace(query) {
+  const q = String(query || "").trim();
+  if (!q) return null;
+  if (q.toLowerCase() === "your location") return null;
+
+  const matched = matchPlace(q);
+  if (!matched) return null;
+  if (!isWithinMelbourneCbd(matched.lat, matched.lng)) return null;
+  return matched;
 }

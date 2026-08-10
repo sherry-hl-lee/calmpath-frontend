@@ -5,6 +5,7 @@
   const state = {
     threshold: 0,
     routes: [],
+    routeCompareMeta: null,
     selectedRouteId: null,
     destination: null,
     nearbyRefuges: [],
@@ -14,10 +15,10 @@
     addressRequestId: null,
     /**
      * Search centre for Quiet Refuges.
-     * followsOrigin: keep synced with GPS / route starting point.
+     * followsOrigin: keep synced with the route starting point until edited.
      */
     refugeLocation: {
-      name: "Your location",
+      name: DEFAULT_ORIGIN.name,
       lat: DEFAULT_ORIGIN.lat,
       lng: DEFAULT_ORIGIN.lng,
       followsOrigin: true,
@@ -138,7 +139,7 @@
     if (!state.refugeLocation.followsOrigin) return;
     setRefugeLocation(
       {
-        name: "Your location",
+        name: ORIGIN.name,
         lat: ORIGIN.lat,
         lng: ORIGIN.lng,
       },
@@ -148,25 +149,14 @@
 
   function commitRefugeLocationFromInput() {
     const value = (els.refugeLocation?.value || "").trim();
-    if (!value) return false;
-
-    if (value.toLowerCase() === "your location") {
-      showRefugeLocationError("");
-      setRefugeLocation(
-        {
-          name: "Your location",
-          lat: ORIGIN.lat,
-          lng: ORIGIN.lng,
-        },
-        { followsOrigin: true }
-      );
-      loadNearbyRefuges();
-      return true;
+    if (!value) {
+      showRefugeLocationError("Enter a Melbourne CBD place.");
+      return false;
     }
 
-    const place = matchPlace(value);
+    const place = resolveCbdPlace(value);
     if (!place) {
-      showRefugeLocationError("Location not found. Try a CBD place or lat, lng.");
+      showRefugeLocationError("Please choose a location within Melbourne CBD.");
       return false;
     }
 
@@ -264,53 +254,16 @@
     }
   }
 
-  function detectUserLocation() {
-    if (!navigator.geolocation) {
-      applyOriginChange(DEFAULT_ORIGIN, "default");
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        applyOriginChange(
-          {
-            name: "Your location",
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-          },
-          "gps"
-        );
-      },
-      () => {
-        // Keep the visible "Your location" label; coords fall back to Flinders
-        setOrigin({
-          name: "Your location",
-          lat: DEFAULT_ORIGIN.lat,
-          lng: DEFAULT_ORIGIN.lng,
-          source: "default",
-        });
-        renderOriginUi();
-        updateOriginMarker();
-        syncRefugeLocationFromOrigin();
-        loadNearbyRefuges();
-      },
-      { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
-    );
-  }
-
   function commitOriginFromInput() {
     const value = (els.originInput?.value || "").trim();
-    if (!value) return false;
-
-    // Keep GPS / default start when the label is still "Your location"
-    if (value.toLowerCase() === "your location") {
-      showError("");
-      return true;
+    if (!value) {
+      showError("Enter a Melbourne CBD starting point.");
+      return false;
     }
 
-    const place = matchPlace(value);
+    const place = resolveCbdPlace(value);
     if (!place) {
-      showError("Starting point not found. Try a CBD place or lat, lng.");
+      showError("Please choose a starting point within Melbourne CBD.");
       return false;
     }
     showError("");
@@ -414,15 +367,25 @@
     const bounds = [];
     state.routes.forEach((route) => {
       const selected = route.id === state.selectedRouteId;
-      const line = L.polyline(route.path, {
+      const style = {
         color: routeColor(route),
         weight: selected ? 6 : 4,
         opacity: selected ? 0.95 : 0.45,
         dashArray: route.sensoryClass === "high" ? "8 8" : null,
-      }).addTo(layers.routes);
+      };
 
-      line.on("click", () => selectRouteById(route.id));
-      route.path.forEach((p) => bounds.push(p));
+      let layer;
+      if (route.geometry && route.geometry.type === "LineString") {
+        layer = L.geoJSON(route.geometry, { style: () => style }).addTo(layers.routes);
+        route.geometry.coordinates.forEach(([lng, lat]) => bounds.push([lat, lng]));
+      } else if (route.path?.length) {
+        layer = L.polyline(route.path, style).addTo(layers.routes);
+        route.path.forEach((p) => bounds.push(p));
+      }
+
+      if (layer) {
+        layer.on("click", () => selectRouteById(route.id));
+      }
     });
 
     if (state.destination) {
@@ -498,15 +461,18 @@
 
     if (els.findRoute) {
       els.findRoute.disabled = true;
-      els.findRoute.textContent = "Finding road routes…";
+      els.findRoute.textContent = "Finding routes…";
     }
-    showBanner("Snapping walking paths to roads…", "info");
+    showBanner("Comparing walking routes…", "info");
 
     try {
-      state.routes = await buildRoadRoutesForDestination(dest);
+      const result = await fetchRoutesCompare(ORIGIN.lat, ORIGIN.lng, dest);
+      state.routes = result.routes;
+      state.routeCompareMeta = result.meta;
     } catch (err) {
       console.warn(err);
       state.routes = cloneRoutesForDestination(dest);
+      state.routeCompareMeta = { source: "fallback", recommendation_status: null };
     } finally {
       if (els.findRoute) {
         els.findRoute.disabled = false;
@@ -515,16 +481,23 @@
     }
 
     const recommended = state.routes.find((r) => r.recommended) || state.routes[0];
-    state.selectedRouteId = recommended.id;
+    state.selectedRouteId = recommended?.id || null;
 
     if (els.routesSection) els.routesSection.hidden = false;
-    const allSnapped = state.routes.every((r) => r.roadSnapped);
-    showBanner(
-      allSnapped
-        ? "Recommended route updated · paths follow roads"
-        : "Recommended route updated · road service unavailable, using approximate paths",
-      allSnapped ? "success" : "warn"
-    );
+
+    if (state.routeCompareMeta?.source === "backend") {
+      const banner = bannerForRouteCompare(state.routeCompareMeta);
+      showBanner(banner.message, banner.type);
+    } else {
+      const allSnapped = state.routes.every((r) => r.roadSnapped);
+      showBanner(
+        allSnapped
+          ? "Using demo routes · backend compare not available yet"
+          : "Using approximate demo paths · backend compare not available yet",
+        "warn"
+      );
+    }
+
     renderRoutes();
     evaluateThreshold();
     setView("routes");
@@ -545,30 +518,27 @@
       return;
     }
 
-    // Apply starting point from the single input before routing
     const originValue = (els.originInput?.value || "").trim();
-    if (originValue && originValue.toLowerCase() !== "your location") {
-      const originPlace = matchPlace(originValue);
-      if (!originPlace) {
-        showError("Starting point not found. Try a CBD place or lat, lng.");
-        return;
-      }
-      setOrigin({
-        name: originPlace.name,
-        lat: originPlace.lat,
-        lng: originPlace.lng,
-        source: "custom",
-      });
-      renderOriginUi();
-      updateOriginMarker();
+    const originPlace = resolveCbdPlace(originValue);
+    if (!originPlace) {
+      showError("Please choose a starting point within Melbourne CBD.");
+      return;
     }
+    setOrigin({
+      name: originPlace.name,
+      lat: originPlace.lat,
+      lng: originPlace.lng,
+      source: "custom",
+    });
+    renderOriginUi();
+    updateOriginMarker();
+    syncRefugeLocationFromOrigin();
 
-    const matched = matchDestination(query) || {
-      id: "custom-cbd",
-      name: query,
-      lat: -37.8136,
-      lng: 144.9631,
-    };
+    const matched = resolveCbdPlace(query) || matchDestination(query);
+    if (!matched || !isWithinMelbourneCbd(matched.lat, matched.lng)) {
+      showError("Please choose a destination within Melbourne CBD.");
+      return;
+    }
 
     planRoutesTo(matched);
   }
@@ -1005,6 +975,20 @@
   document.addEventListener("DOMContentLoaded", () => {
     loadThreshold();
     initDatalist();
+    setOrigin({
+      name: DEFAULT_ORIGIN.name,
+      lat: DEFAULT_ORIGIN.lat,
+      lng: DEFAULT_ORIGIN.lng,
+      source: "default",
+    });
+    setRefugeLocation(
+      {
+        name: DEFAULT_ORIGIN.name,
+        lat: DEFAULT_ORIGIN.lat,
+        lng: DEFAULT_ORIGIN.lng,
+      },
+      { followsOrigin: true }
+    );
     initMap();
     wireSearch();
     wireOriginEditor();
@@ -1014,6 +998,6 @@
     renderAlerts();
     renderOriginUi();
     renderRefugeLocationUi();
-    detectUserLocation();
+    loadNearbyRefuges();
   });
 })();
