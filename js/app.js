@@ -13,6 +13,7 @@
     /** Page-session cache for GET /api/v1/refuges/address (US2.1) */
     refugeAddressById: {},
     addressRequestId: null,
+    activeAlertId: null,
     /**
      * Search centre for Quiet Refuges.
      * followsOrigin: keep synced with the route starting point until edited.
@@ -897,8 +898,74 @@
     });
   }
 
+  function getAlertById(id) {
+    return (predictiveAlerts || []).find((a) => a.id === id) || null;
+  }
+
+  /**
+   * Map alert location labels to a concrete CBD destination so cross-view
+   * navigation can keep the same target context.
+   */
+  function resolveAlertDestination(alert) {
+    if (!alert) return null;
+
+    const direct = matchDestination(alert.location);
+    if (direct && isWithinMelbourneCbd(direct.lat, direct.lng)) return direct;
+
+    const byId = {
+      atrium: {
+        id: "federation-square",
+        name: "Federation Square",
+        lat: -37.8176,
+        lng: 144.9690,
+      },
+      swanston: {
+        id: "state-library",
+        name: "State Library Victoria",
+        lat: -37.8098,
+        lng: 144.9652,
+      },
+      market: {
+        id: "queen-victoria-market",
+        name: "Queen Victoria Market",
+        lat: -37.8076,
+        lng: 144.9568,
+      },
+    };
+
+    return byId[alert.id] || null;
+  }
+
+  function applyAlertTargetToRoutes(alert) {
+    const dest = resolveAlertDestination(alert);
+    if (!dest) {
+      showError("Alert location is unavailable as a CBD destination.");
+      return;
+    }
+    syncDestinationInputs(dest.name, "both");
+    planRoutesTo(dest);
+  }
+
+  function applyAlertTargetToRefuges(alert) {
+    const target = resolveAlertDestination(alert);
+    if (!target) {
+      showRefugeLocationError("Alert location is unavailable as a refuge search location.");
+      return;
+    }
+    showRefugeLocationError("");
+    setRefugeLocation(
+      {
+        name: target.name,
+        lat: target.lat,
+        lng: target.lng,
+      },
+      { followsOrigin: false }
+    );
+  }
+
   function openAlertModal(alert) {
     if (!els.modal) return;
+    state.activeAlertId = alert.id;
     els.modalTitle.textContent = alert.location;
     els.modalMeta.innerHTML = `
       <div><dt>Location</dt><dd>${alert.location}</dd></div>
@@ -911,12 +978,18 @@
 
   function closeAlertModal() {
     if (!els.modal) return;
+    state.activeAlertId = null;
     els.modal.hidden = true;
     els.modal.classList.remove("is-open");
   }
 
   function goToQuieterRoutes() {
+    const activeAlert = getAlertById(state.activeAlertId);
     closeAlertModal();
+    if (activeAlert) {
+      applyAlertTargetToRoutes(activeAlert);
+      return;
+    }
     if (!state.routes.length) {
       if (els.destination && !els.destination.value) {
         els.destination.value = "State Library Victoria";
@@ -992,6 +1065,8 @@
   els.modalClose?.addEventListener("click", closeAlertModal);
   els.modalRoutes?.addEventListener("click", goToQuieterRoutes);
   els.modalRefuges?.addEventListener("click", () => {
+    const activeAlert = getAlertById(state.activeAlertId);
+    if (activeAlert) applyAlertTargetToRefuges(activeAlert);
     closeAlertModal();
     setView("refuges");
   });
