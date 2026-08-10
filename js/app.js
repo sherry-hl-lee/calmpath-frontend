@@ -351,20 +351,55 @@
     });
   }
 
-  function drawPtStops() {
+  function drawPtStops(stops) {
     clearGroup(layers.pt);
-    if (typeof PT_STOPS === "undefined") return;
-    PT_STOPS.forEach((stop) => {
+    const list =
+      Array.isArray(stops) && stops.length
+        ? stops
+        : typeof PT_STOPS !== "undefined"
+          ? PT_STOPS.map((stop) => ({
+              ...stop,
+              label: stop.type,
+              icon: stop.icon,
+            }))
+          : [];
+
+    // Keep map readable: prefer closest stops along the route.
+    const capped = [...list]
+      .sort((a, b) => {
+        const da = Number.isFinite(a.distance_to_route_m) ? a.distance_to_route_m : 9999;
+        const db = Number.isFinite(b.distance_to_route_m) ? b.distance_to_route_m : 9999;
+        return da - db;
+      })
+      .slice(0, 12);
+
+    capped.forEach((stop) => {
+      const lat = Number(stop.lat);
+      const lng = Number(stop.lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+      const label = stop.label || stop.type || "Stop";
+      const iconEmoji = stop.icon || "🚋";
       const icon = L.divIcon({
         className: "map-emoji-icon",
-        html: `<span>${stop.icon}</span><small>${stop.type}</small>`,
+        html: `<span>${iconEmoji}</span><small>${label}</small>`,
         iconSize: [40, 36],
         iconAnchor: [20, 18],
       });
-      L.marker([stop.lat, stop.lng], { icon })
-        .bindPopup(`${stop.icon} ${stop.type} stop`)
+      const distanceBit =
+        Number.isFinite(stop.distance_to_route_m) && stop.distance_to_route_m != null
+          ? ` · ${Math.round(stop.distance_to_route_m)}m from route`
+          : "";
+      L.marker([lat, lng], { icon })
+        .bindPopup(`${iconEmoji} ${stop.name || `${label} stop`}${distanceBit}`)
         .addTo(layers.pt);
     });
+  }
+
+  function ptStopsForSelectedRoute() {
+    const selected =
+      state.routes.find((r) => r.id === state.selectedRouteId) || state.routes[0];
+    if (selected?.nearbyTransport?.length) return selected.nearbyTransport;
+    return null;
   }
 
   function drawRoutesOnMap() {
@@ -438,6 +473,7 @@
     if (!map) return;
     if (state.mapMode === "refuges") {
       clearGroup(layers.routes);
+      clearGroup(layers.pt);
       const nearby = state.nearbyRefuges || [];
       drawRefugesOnMap(nearby);
       if (nearby.length) {
@@ -451,6 +487,7 @@
     } else {
       clearGroup(layers.refuges);
       drawRoutesOnMap();
+      drawPtStops(ptStopsForSelectedRoute());
     }
   }
 
@@ -463,6 +500,7 @@
       els.thresholdPanel.hidden = true;
       els.thresholdPanel.innerHTML = "";
     }
+    if (layers.pt) drawPtStops(null);
   }
 
   function showSameLocationNotice(placeName) {
@@ -491,10 +529,10 @@
       els.findRoute.disabled = true;
       els.findRoute.textContent = "Finding routes…";
     }
-    showBanner("Comparing walking routes…", "info");
+    showBanner("Finding walking routes…", "info");
 
     try {
-      const result = await fetchRoutesCompare(ORIGIN.lat, ORIGIN.lng, dest);
+      const result = await fetchPlanRoutes(ORIGIN.lat, ORIGIN.lng, dest);
       state.routes = result.routes;
       state.routeCompareMeta = result.meta;
     } catch (err) {
@@ -513,7 +551,10 @@
 
     if (els.routesSection) els.routesSection.hidden = false;
 
-    if (state.routeCompareMeta?.source === "backend") {
+    if (state.routeCompareMeta?.source === "us11") {
+      const banner = bannerForUs11(state.routeCompareMeta, state.routes);
+      showBanner(banner.message, banner.type);
+    } else if (state.routeCompareMeta?.source === "backend") {
       const banner = bannerForRouteCompare(state.routeCompareMeta);
       showBanner(banner.message, banner.type);
     } else {

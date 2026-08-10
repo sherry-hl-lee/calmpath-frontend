@@ -1,7 +1,8 @@
 /* CalmPath — backend API client (CloudFront → ECS FastAPI)
  *
- * Refuge: GET /api/v1/refuges/nearby, GET /api/v1/refuges/address
- * Routes: POST /api/v1/routes/compare
+ * Refuge (US2.1): GET /api/v1/refuges/nearby, GET /api/v1/refuges/address
+ * Routes (US1.1): GET /api/v1/routes — sensory + nearby tram/train
+ * Routes (US1.2): POST /api/v1/routes/compare — shortest vs lower-crowd
  * Open-data / OSRM fallbacks remain for local dev when API_BASE is cleared.
  */
 
@@ -252,6 +253,46 @@ function crowdLevelToUi(crowdLevel, limitedData) {
   return { level: LEVEL.limited, sensoryClass: "limited", limitedData: true };
 }
 
+/** Map US1.1 sensory_indicator (Low / High / Limited Data / …) to UI badges. */
+function sensoryIndicatorToUi(indicator) {
+  const key = String(indicator || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_");
+  if (key === "low") return { level: LEVEL.low, sensoryClass: "low", limitedData: false };
+  if (key === "medium") return { level: LEVEL.medium, sensoryClass: "medium", limitedData: false };
+  if (key === "high") return { level: LEVEL.high, sensoryClass: "high", limitedData: false };
+  if (key === "limited" || key === "limited_data" || key.includes("limited")) {
+    return { level: LEVEL.limited, sensoryClass: "limited", limitedData: true };
+  }
+  return { level: LEVEL.limited, sensoryClass: "limited", limitedData: true };
+}
+
+function mapNearbyTransport(stops) {
+  return (Array.isArray(stops) ? stops : [])
+    .map((stop) => {
+      const lat = Number(stop.latitude);
+      const lng = Number(stop.longitude);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+      const type = String(stop.type || "tram").toLowerCase();
+      const label = type === "train" ? "Train" : type === "bus" ? "Bus" : "Tram";
+      const icon = type === "train" ? "🚆" : type === "bus" ? "🚌" : "🚋";
+      return {
+        id: stop.id || `${type}-${lat.toFixed(5)}-${lng.toFixed(5)}`,
+        name: stop.name || `${label} stop`,
+        type,
+        label,
+        icon,
+        lat,
+        lng,
+        distance_to_route_m: Number.isFinite(Number(stop.distance_to_route_m))
+          ? Number(stop.distance_to_route_m)
+          : null,
+      };
+    })
+    .filter(Boolean);
+}
+
 function buildRouteNote(apiRoute) {
   if (apiRoute.limited_data) return "Limited sensor coverage on this route";
   if (apiRoute.has_congestion_warning) return "High pedestrian congestion detected on part of this route";
@@ -259,6 +300,17 @@ function buildRouteNote(apiRoute) {
     return `${apiRoute.crowd_level} crowd · ${apiRoute.sensory_level} sensory`;
   }
   return apiRoute.route_type === "shortest" ? "Shortest walking path" : "Lower crowd exposure route";
+}
+
+function buildUs11RouteNote(apiRoute, ui) {
+  if (ui.limitedData) return "Limited sensor coverage on this route";
+  const coverage = Number(apiRoute.sensor_coverage);
+  const sensors = Number(apiRoute.sensors_used);
+  const bits = [];
+  if (Number.isFinite(sensors) && sensors > 0) bits.push(`${sensors} sensors`);
+  if (Number.isFinite(coverage)) bits.push(`${Math.round(coverage * 100)}% coverage`);
+  if (bits.length) return `${String(apiRoute.sensory_indicator || "Low")} sensory · ${bits.join(" · ")}`;
+  return `${String(apiRoute.sensory_indicator || "Low")} sensory load`;
 }
 
 function mapApiRoute(apiRoute, id, name, recommended) {
@@ -278,6 +330,98 @@ function mapApiRoute(apiRoute, id, name, recommended) {
     recommended: Boolean(recommended),
     note: buildRouteNote(apiRoute),
     routeType: apiRoute.route_type,
+    nearbyTransport: [],
+  };
+}
+
+/** Map GET /api/v1/routes (US1.1) response to UI route cards + PT stops. */
+function mapUs11RoutesResponse(response) {
+  const raw = Array.isArray(response?.routes) ? response.routes : [];
+  const sorted = [...raw].sort((a, b) => {
+    const da = Number(a.distance_m);
+    const db = Number(b.distance_m);
+    if (Number.isFinite(da) && Number.isFinite(db) && da !== db) return da - db;
+    return 0;
+  });
+
+  let bestIdx = 0;
+  let bestScore = Infinity;
+  sorted.forEach((route, index) => {
+    const ui = sensoryIndicatorToUi(route.sensory_indicator);
+    const score = Number.isFinite(Number(route.sensory_score))
+      ? Number(route.sensory_score)
+      : ui.limitedData
+        ? 500
+        : ui.level * 100;
+    if (score < bestScore) {
+      bestScore = score;
+      bestIdx = index;
+    }
+  });
+
+  const routes = sorted.map((apiRoute, index) => {
+    const ui = sensoryIndicatorToUi(apiRoute.sensory_indicator);
+    const geometry = apiRoute.geometry || null;
+    const durationS = Number(apiRoute.duration_s);
+    const distanceM = Number(apiRoute.distance_m);
+    const isShortest = index === 0;
+    const isRecommended = index === bestIdx;
+    let name = `Route ${index + 1}`;
+    if (isShortest && isRecommended) name = "Shortest Route";
+    else if (isShortest) name = "Shortest Route";
+    else if (isRecommended) name = "Recommended Route";
+
+    return {
+      id: String(apiRoute.id || `route-${index + 1}`),
+      name,
+      ...ui,
+      crowdScore: Number.isFinite(Number(apiRoute.sensory_score))
+        ? Number(apiRoute.sensory_score)
+        : ui.level * 100,
+      path: geoJsonToLeafletPath(geometry),
+      geometry,
+      distance: Number.isFinite(distanceM) ? formatDistance(distanceM) : "—",
+      time: Number.isFinite(durationS) ? formatDuration(durationS) : "—",
+      distanceM: Number.isFinite(distanceM) ? distanceM : null,
+      roadSnapped: true,
+      recommended: isRecommended,
+      note: buildUs11RouteNote(apiRoute, ui),
+      routeType: isShortest ? "shortest" : "alternative",
+      nearbyTransport: mapNearbyTransport(apiRoute.nearby_transport),
+      sensoryIndicator: apiRoute.sensory_indicator,
+      sensorCoverage: apiRoute.sensor_coverage,
+      sensorsUsed: apiRoute.sensors_used,
+    };
+  });
+
+  return {
+    routes,
+    meta: {
+      source: "us11",
+      recommendation_status: null,
+      recommendation_note: null,
+      warning: null,
+      route_count: routes.length,
+      compare: null,
+    },
+  };
+}
+
+function bannerForUs11(meta, routes) {
+  const count = routes?.length || meta?.route_count || 0;
+  const limited = (routes || []).filter((r) => r.limitedData).length;
+  if (!count) {
+    return { message: "No walking routes found for this trip", type: "warn" };
+  }
+  if (limited === count) {
+    return {
+      message: `Found ${count} walking routes · sensory data limited on these corridors`,
+      type: "warn",
+    };
+  }
+  return {
+    message: `Found ${count} walking routes · live sensory indicators and nearby tram/train stops`,
+    type: "success",
   };
 }
 
@@ -349,6 +493,19 @@ function bannerForRouteCompare(meta) {
   }
 }
 
+async function fetchRoutesUs11FromBackend(origin, destination) {
+  const url = new URL(`${API_BASE}/api/v1/routes`);
+  url.searchParams.set("origin_latitude", String(origin.latitude));
+  url.searchParams.set("origin_longitude", String(origin.longitude));
+  url.searchParams.set("destination_latitude", String(destination.latitude));
+  url.searchParams.set("destination_longitude", String(destination.longitude));
+  const res = await fetch(url.toString());
+  if (!res.ok) {
+    throw createApiError(res.status, await readApiErrorDetail(res));
+  }
+  return mapUs11RoutesResponse(await res.json());
+}
+
 async function fetchRoutesCompareFromBackend(origin, destination) {
   const res = await fetch(`${API_BASE}/api/v1/routes/compare`, {
     method: "POST",
@@ -362,24 +519,58 @@ async function fetchRoutesCompareFromBackend(origin, destination) {
 }
 
 /**
- * Compare routes (backend first, OSRM demo fallback).
+ * Plan routes: US1.1 GET /routes first; attach US1.2 compare meta when available.
+ * Falls back to compare-only, then OSRM demo.
  * Returns { routes, meta }.
  */
-async function fetchRoutesCompare(originLat, originLng, dest) {
+async function fetchPlanRoutes(originLat, originLng, dest) {
   const origin = { latitude: originLat, longitude: originLng };
   const destination = { latitude: dest.lat, longitude: dest.lng };
 
   if (API_BASE) {
     try {
-      return await fetchRoutesCompareFromBackend(origin, destination);
+      const us11 = await fetchRoutesUs11FromBackend(origin, destination);
+      try {
+        const compare = await fetchRoutesCompareFromBackend(origin, destination);
+        us11.meta.compare = compare.meta;
+        // Prefer compare cards only when US1.2 can actually recommend a quieter route.
+        if (
+          compare.meta.recommendation_status === "LOWER_CROWD" &&
+          compare.meta.recommended_route_is_distinct &&
+          Array.isArray(compare.routes) &&
+          compare.routes.length
+        ) {
+          return {
+            routes: compare.routes,
+            meta: {
+              ...compare.meta,
+              source: "backend",
+              us11_route_count: us11.routes.length,
+            },
+          };
+        }
+      } catch (err) {
+        console.warn("US1.2 routes/compare unavailable; keeping US1.1 routes.", err);
+      }
+      return us11;
     } catch (err) {
-      console.warn("Routes compare API unavailable; using OSRM fallback.", err);
+      console.warn("US1.1 routes API unavailable; trying compare fallback.", err);
+      try {
+        return await fetchRoutesCompareFromBackend(origin, destination);
+      } catch (err2) {
+        console.warn("Routes compare API unavailable; using OSRM fallback.", err2);
+      }
     }
   }
 
   const routes = await buildRoadRoutesForDestination(dest);
   return {
     routes,
-    meta: { source: "osrm", recommendation_status: null },
+    meta: { source: "osrm", recommendation_status: null, compare: null },
   };
+}
+
+/** @deprecated Prefer fetchPlanRoutes — kept for callers that only need compare. */
+async function fetchRoutesCompare(originLat, originLng, dest) {
+  return fetchPlanRoutes(originLat, originLng, dest);
 }
