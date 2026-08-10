@@ -2,6 +2,10 @@
 
 Sensory-aware walking routes for Melbourne CBD.
 
+## Live demo
+
+**Deployed app:** [https://calmpath-tp10.netlify.app/](https://calmpath-tp10.netlify.app/)
+
 ## Run locally
 
 Open `index.html` in a browser, or from this folder:
