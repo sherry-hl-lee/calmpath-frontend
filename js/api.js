@@ -1,7 +1,8 @@
-/* CalmPath — backend API client
+/* CalmPath — backend API client (CloudFront → ECS FastAPI)
  *
- * Refuge: deployed FastAPI + CloudFront (open-data fallback for dev).
- * Routes: POST /api/v1/routes/compare (OSRM fallback until backend is live).
+ * Refuge: GET /api/v1/refuges/nearby, GET /api/v1/refuges/address
+ * Routes: POST /api/v1/routes/compare
+ * Open-data / OSRM fallbacks remain for local dev when API_BASE is cleared.
  */
 
 const API_BASE = "https://dpevp4238kw5k.cloudfront.net";
@@ -18,6 +19,23 @@ const REFUGE_SUB_THEME_TO_TYPE = {
 };
 
 let refugeCatalogPromise = null;
+
+async function readApiErrorDetail(res) {
+  const text = await res.text();
+  if (!text) return res.statusText || `HTTP ${res.status}`;
+  try {
+    const body = JSON.parse(text);
+    if (typeof body.detail === "string") return body.detail;
+    if (Array.isArray(body.detail)) {
+      return body.detail
+        .map((item) => (typeof item === "string" ? item : item.msg || JSON.stringify(item)))
+        .join("; ");
+    }
+  } catch (_) {
+    /* plain text error body */
+  }
+  return text;
+}
 
 function slugId(name, lat, lng) {
   const slug = String(name || "place")
@@ -165,8 +183,7 @@ async function fetchNearbyRefugesFromBackend(latitude, longitude, radius_m) {
   url.searchParams.set("radius_m", String(radius_m));
   const res = await fetch(url.toString());
   if (!res.ok) {
-    const detail = await res.text();
-    throw createApiError(res.status, detail || res.statusText);
+    throw createApiError(res.status, await readApiErrorDetail(res));
   }
   return res.json();
 }
@@ -177,11 +194,15 @@ async function fetchRefugeAddressFromBackend(latitude, longitude) {
   url.searchParams.set("longitude", String(longitude));
   const res = await fetch(url.toString());
   if (res.status === 404) {
-    throw createApiError(404, "No valid street address within 200 m of this location");
+    throw createApiError(
+      404,
+      (await readApiErrorDetail(res)) ||
+        "No valid street address within 200 m of this location"
+    );
   }
   if (!res.ok) {
     const retryAfter = res.headers.get("Retry-After");
-    throw createApiError(res.status, await res.text(), retryAfter);
+    throw createApiError(res.status, await readApiErrorDetail(res), retryAfter);
   }
   return res.json();
 }
@@ -335,7 +356,7 @@ async function fetchRoutesCompareFromBackend(origin, destination) {
     body: JSON.stringify({ origin, destination }),
   });
   if (!res.ok) {
-    throw createApiError(res.status, await res.text());
+    throw createApiError(res.status, await readApiErrorDetail(res));
   }
   return mapRoutesCompareResponse(await res.json());
 }

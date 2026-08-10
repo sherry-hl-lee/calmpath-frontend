@@ -54,6 +54,21 @@ function haversineMeters(lat1, lng1, lat2, lng2) {
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
+/** Treat two points within this distance as the same location for route planning. */
+const SAME_LOCATION_THRESHOLD_M = 50;
+
+function isSameLocation(lat1, lng1, lat2, lng2, thresholdM = SAME_LOCATION_THRESHOLD_M) {
+  if (
+    !Number.isFinite(lat1) ||
+    !Number.isFinite(lng1) ||
+    !Number.isFinite(lat2) ||
+    !Number.isFinite(lng2)
+  ) {
+    return false;
+  }
+  return haversineMeters(lat1, lng1, lat2, lng2) <= thresholdM;
+}
+
 const CBD_DESTINATIONS = [
   {
     id: "flinders",

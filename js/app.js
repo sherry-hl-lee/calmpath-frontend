@@ -453,12 +453,39 @@
     }
   }
 
+  function clearRouteResults() {
+    state.routes = [];
+    state.routeCompareMeta = null;
+    state.selectedRouteId = null;
+    if (els.routes) els.routes.innerHTML = "";
+    if (els.thresholdPanel) {
+      els.thresholdPanel.hidden = true;
+      els.thresholdPanel.innerHTML = "";
+    }
+  }
+
+  function showSameLocationNotice(placeName) {
+    clearRouteResults();
+    showError("Starting point and destination are the same location.");
+    const label = placeName ? `"${placeName}"` : "this location";
+    showBanner(`You're already at ${label} — choose a different destination.`, "info");
+    if (els.routesSection) els.routesSection.hidden = true;
+  }
+
   async function planRoutesTo(dest) {
     if (!dest || !Number.isFinite(dest.lat) || !Number.isFinite(dest.lng)) return;
 
     state.destination = dest;
     syncDestinationInputs(dest.name || "", "both");
 
+    if (isSameLocation(ORIGIN.lat, ORIGIN.lng, dest.lat, dest.lng)) {
+      showSameLocationNotice(dest.name);
+      setView("routes");
+      refreshMapOverlays();
+      return;
+    }
+
+    showError("");
     if (els.findRoute) {
       els.findRoute.disabled = true;
       els.findRoute.textContent = "Finding routes…";
@@ -492,8 +519,8 @@
       const allSnapped = state.routes.every((r) => r.roadSnapped);
       showBanner(
         allSnapped
-          ? "Using demo routes · backend compare not available yet"
-          : "Using approximate demo paths · backend compare not available yet",
+          ? "Backend unavailable — showing demo walking routes"
+          : "Backend unavailable — showing approximate demo paths",
         "warn"
       );
     }
