@@ -1,24 +1,90 @@
 # CalmPath Frontend
 
-Sensory-aware walking routes for Melbourne CBD.
+A web interface for sensory-aware pedestrian route planning in
+Melbourne.
 
-## Live demo
+## Overview
 
-**Deployed app:** [https://calmpath-tp10.netlify.app/](https://calmpath-tp10.netlify.app/)
+CalmPath helps users explore walking routes using factors beyond
+distance alone, including pedestrian crowd exposure and access to
+lower-stimulation locations.
 
-## Run locally
+The frontend communicates with the CalmPath backend through REST APIs
+and presents route alternatives, sensory indicators, public-transport
+access information, and nearby refuge information through an interactive
+browser experience.
 
-Open `index.html` in a browser, or from this folder:
+## Key Features
 
-```bash
-npx serve .
+-   Interactive walking-route planning
+-   Sensory / crowd-condition indicators
+-   Crowd-aware route comparison
+-   Limited-data state when route information is incomplete
+-   Nearby low-sensory refuge discovery
+-   Tram and train access-point visualisation
+-   Integration with the CalmPath REST backend
+-   Browser-based responsive interface
+-   Deployed web demo
+
+## Tech Stack
+
+-   JavaScript
+-   HTML5
+-   CSS3
+-   REST / JSON APIs
+-   GeoJSON / geospatial data
+-   Netlify
+-   Git & GitHub
+
+## System Integration
+
+``` text
+User Browser
+     |
+     v
+CalmPath Frontend
+     |
+     | REST / JSON
+     v
+CalmPath Backend
+     |
+     +----------> Routing
+     +----------> Crowd Data
+     +----------> Refuge Data
+     +----------> Public Transport Data
 ```
 
-## Features
+## Backend
 
-- **Route Planner (US1.1):** `GET /api/v1/routes` — walking alternatives with sensory indicators and nearby tram/train stops; OSRM demo fallback if offline
-- **Route compare (US1.2):** `POST /api/v1/routes/compare` — used when a distinct lower-crowd recommendation is available; Peak Crowd zones remain demo overlays; crowd threshold with alternatives
-- **Quiet Refuges (US2.1):** Location + radius; deployed FastAPI/RDS refuge search and on-selection address lookup via CloudFront HTTPS
-- **Predictive Alerts (US2.2):** historical-trend alerts with actions to quieter routes or refuges (demo data until alerts API is live)
+The frontend integrates with the separate CalmPath backend repository:
 
-Predictive alerts remain demo data in `js/data.js`. Peak Crowd map circles are demo overlays until a crowd-zone API is provided.
+https://github.com/sherry-hl-lee/calmpath-backend
+
+## Engineering Highlights
+
+### Frontend--Backend Integration
+
+The frontend consumes structured backend responses to present route,
+crowd, refuge, and transport information without embedding backend
+business logic directly into the interface.
+
+### Communicating Data Confidence
+
+The interface can distinguish between lower sensory exposure and
+insufficient data, helping avoid presenting unknown conditions as safe
+or low-crowd conditions.
+
+### Geospatial Presentation
+
+Route and location data are presented in a map-oriented interface,
+allowing users to compare alternatives spatially and understand nearby
+supporting locations.
+
+## Project Context
+
+Developed as part of the **CalmPath Monash University capstone
+project**.
+
+This was a collaborative team project. The system-level functionality is
+documented above, while individual ownership should be recorded in **My
+Contributions**.
